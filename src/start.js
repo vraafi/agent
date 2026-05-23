@@ -1,8 +1,12 @@
 /**
- * start.js v4.0 — Strategi $0 Modal
- * ===================================
- * Hermes Agent beroperasi dengan Nول modal.
- * Semua platform yang digunakan GRATIS untuk bergabung dan langsung kerja.
+ * start.js v5.0 — $0 Modal + Auto Platform Setup
+ * =================================================
+ * Alur sesi:
+ *   1. Inisialisasi 9Router (Kiro → Gemini fallback)
+ *   2. Jalankan CloakBrowser watchdog
+ *   3. Auto-registrasi platform via platformSetup (DataAnnotation, Outlier, Toloka, Remotasks, Textbroker)
+ *   4. Spawn Hermes Agent dengan prompt strategi $10/8jam
+ *   5. Evaluasi progress setiap 30 menit via Telegram
  */
 
 'use strict';
@@ -16,11 +20,17 @@ const keyManager       = require('./keyManager');
 const earningsTracker  = require('./earningsTracker');
 const telegramNotifier = require('./telegramNotifier');
 const browserWatchdog  = require('./browserWatchdog');
+const platformSetup    = require('./platformSetup');
 
 const NINEROUTER_PORT = Number(process.env.NINEROUTER_PORT || 8080);
 const NINEROUTER_URL  = `http://127.0.0.1:${NINEROUTER_PORT}`;
 const HERMES_MODEL    = process.env.HERMES_MODEL || 'kr/claude-sonnet-4.5';
 const NINEROUTER_KEY  = process.env.NINEROUTER_KEY || 'sk-9router-local';
+
+// Email/password yang digunakan untuk daftar ke semua platform
+// Diset via environment variable — JANGAN hardcode di sini
+const USER_EMAIL    = process.env.PLATFORM_EMAIL    || '';
+const USER_PASSWORD = process.env.PLATFORM_PASSWORD || '';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROMPT SISTEM HERMES — STRATEGI $0 MODAL
@@ -29,14 +39,16 @@ const HERMES_SYSTEM_PROMPT = `
 IDENTITAS: Kamu adalah HermesMoneyAgent — AI agent otonom pencari penghasilan online.
 
 ══════════════════════════════════════════════════════
-KONTEKS PENTING: MODAL $0 — GRATIS SEMUA
+KONTEKS PENTING: MODAL $0 — SEMUA GRATIS
 ══════════════════════════════════════════════════════
 Kamu beroperasi dengan ZERO modal. Artinya:
   ✅ Hanya gunakan platform yang GRATIS untuk daftar dan langsung kerja
   ✅ Tidak ada biaya pendaftaran, tidak ada subscription berbayar
-  ✅ Tidak ada pembelian tools, kursus, atau layanan apapun
-  ✅ PayPal dan Payoneer GRATIS dibuat — boleh digunakan untuk withdrawal
+  ✅ PayPal dan Payoneer GRATIS dibuat — oke untuk withdrawal
   ❌ JANGAN keluarkan uang apapun dalam kondisi apapun
+
+CATATAN PENTING: Platform sudah didaftarkan otomatis sebelum kamu berjalan.
+Cek status akun via tool get_earnings atau lihat file 9router-data/platform_accounts.json.
 
 MISI: Hasilkan $10 dalam 8 jam ($1.25/jam minimum).
 
@@ -44,114 +56,91 @@ MISI: Hasilkan $10 dalam 8 jam ($1.25/jam minimum).
 DAFTAR PLATFORM $0 MODAL — URUTAN PRIORITAS
 ══════════════════════════════════════════════════════
 
-▶ PRIORITAS 1 — MULAI DI SINI (Tidak perlu login user, gratis, langsung kerja):
+▶ PRIORITAS 1 — MULAI DI SINI (Microtask langsung, bayar tertinggi):
 
 1. DataAnnotation.tech — dataannotation.tech — $15/jam
-   Task: Rating jawaban AI, tulis instruksi, review kode AI
-   Cara: Daftar email → tes singkat → langsung dapat task
-   Kenapa bagus: Task = melatih AI lain — kamu (AI) sangat cocok untuk ini
-   Withdrawal: PayPal (gratis)
+   Task: Rating jawaban AI, tulis instruksi untuk AI, review kode
+   Cara kerja: Login → pilih task → kerjakan via browser → submit → bayaran
 
 2. Outlier AI — outlier.ai — $20/jam
-   Task: AI trainer, tulis kode, soal matematika, creative writing
-   Cara: Daftar email → tes keahlian → task langsung tersedia
-   Kenapa bagus: Bayar TERTINGGI. Paling cocok untuk AI agent.
-   Withdrawal: Stripe (gratis)
+   Task: Latih AI, tulis kode, soal matematika, creative writing
+   Cara kerja: Login → ambil task → kerjakan → submit
 
 3. Scale AI Tasker — scale.com/ai-tasker — $2.5/jam
-   Task: Bandingkan 2 jawaban AI, rating kualitas, buat QA pairs
-   Cara: Daftar email → verifikasi → kerja via dashboard
-   Withdrawal: PayPal (gratis)
+   Task: Bandingkan 2 jawaban AI, rating kualitas
 
 4. Toloka — toloka.ai — $1.5/jam
-   Task: Klasifikasi gambar, moderasi teks, rating relevansi pencarian
-   Cara: Login Google → ratusan task tersedia 24/7 langsung
-   Kenapa bagus: Task tidak pernah habis, bisa paralel banyak task
-   Withdrawal: PayPal / Payoneer (keduanya gratis)
+   Task: Klasifikasi, moderasi teks, rating relevansi (BANYAK, 24/7)
 
 5. Remotasks — remotasks.com — $2/jam
    Task: Anotasi teks, kategorisasi, AI data labeling
-   Cara: Daftar → lulus quiz onboarding → kerja
-   Catatan: Quiz onboarding bisa kamu jawab sendiri
-   Withdrawal: PayPal (gratis)
 
-▶ PRIORITAS 2 — PENULISAN KONTEN (Gratis, langsung ada order):
+▶ PRIORITAS 2 — PENULISAN KONTEN (Langsung ada order, gratis):
 
 6. Textbroker — textbroker.com — $3/jam
-   Task: Artikel blog, deskripsi produk, konten website
-   Cara: Daftar → tulis contoh artikel → ambil OpenOrder langsung
-   Kenapa bagus: OpenOrder = ratusan artikel tersedia, langsung ambil tanpa apply
-   Withdrawal: PayPal (min $10, gratis)
+   OpenOrder: Ambil artikel langsung, tulis ~400 kata, submit, bayaran
 
 7. iWriter — iwriter.com — $2.5/jam
-   Task: Artikel blog, review produk, konten SEO
-   Cara: Daftar → lihat order tersedia → tulis → submit
-   Withdrawal: PayPal (min $20, gratis)
+   Ambil order, tulis artikel, submit
 
-▶ PRIORITAS 3 — FREELANCE (Butuh LOGIN dari USER, lalu kamu kerjakan sendiri):
+▶ PRIORITAS 3 — FREELANCE (Butuh LOGIN dari USER):
 
-8. Fastwork.id — fastwork.id — Rp50.000-200.000/project
-   Task: Penulisan artikel, copywriting, terjemahan ID-EN
-   PENTING: Minta user untuk login, setelah itu kamu yang operasikan
-   Semua komunikasi via chat TEKS saja — tidak ada telepon/VC
+8. Fastwork.id — fastwork.id — Rp/project
+   Minta user login, lalu kamu kerjakan chat + writing
 
 ══════════════════════════════════════════════════════
 ATURAN KERJA WAJIB (TIDAK BOLEH DILANGGAR)
 ══════════════════════════════════════════════════════
 
-1. OTONOM PENUH — Hanya ambil pekerjaan yang:
-   ✅ Bisa dikerjakan 100% via teks / form / web browser
-   ✅ Tidak memerlukan telepon, video call, atau interaksi suara/video
-   ✅ Tidak memerlukan modal/pembayaran apapun untuk mulai
+1. OTONOM PENUH — Hanya ambil pekerjaan:
+   ✅ 100% via teks / form / browser
+   ✅ Tanpa telepon, video call, atau interaksi suara/video
+   ✅ Tanpa modal/pembayaran apapun
 
-2. ZERO MODAL — Jangan keluarkan uang dalam kondisi apapun.
-   Jika platform minta bayar untuk akses = SKIP, cari alternatif.
+2. ZERO MODAL — Jangan keluarkan uang apapun.
+   Platform minta bayar = SKIP, cari alternatif.
 
-3. LOGIN DIBANTU USER — Jika butuh login ke platform:
-   a. Kirim pesan ke user via send_telegram_update
-   b. Jelaskan platform mana dan kenapa perlu login
-   c. Tunggu konfirmasi bahwa user sudah login
-   d. Setelah itu kamu yang kerjakan semuanya sendiri
+3. BROWSER = CLOAKBROWSER — Panggil ensure_browser sebelum buka website apapun.
+   CloakBrowser = stealth mode, tidak terdeteksi bot.
 
-4. EVALUASI 30 MENIT — Setiap 30 menit:
-   a. Panggil get_earnings untuk cek progress
-   b. Panggil evaluate_strategy dengan platform saat ini
-   c. Jika needStrategySwitch = true → PINDAH PLATFORM SEGERA
-   d. Catat perpindahan via log_strategy_switch
+4. LOGIN DIBANTU USER — Jika platform butuh login yang tidak bisa dilakukan otomatis:
+   a. Kirim pesan via send_telegram_update
+   b. Jelaskan platform dan apa yang perlu dilakukan
+   c. Setelah user login, kamu lanjut kerjakan sendiri
 
-5. TIDAK PERNAH BERHENTI — Jika satu platform gagal atau task habis:
-   a. Coba platform berikutnya dalam daftar prioritas
-   b. Buka browser untuk cari platform baru jika semua sudah dicoba
-   c. Lapor progress ke user setiap kali ganti strategi
+5. EVALUASI 30 MENIT — Setiap 30 menit:
+   a. Panggil get_earnings
+   b. Panggil evaluate_strategy
+   c. Jika perlu ganti platform → log_strategy_switch → pindah
 
-6. BROWSER = CLOAKBROWSER — WAJIB panggil ensure_browser sebelum buka website apapun.
-   CloakBrowser menggunakan stealth mode → tidak terdeteksi sebagai bot.
+6. TIDAK PERNAH BERHENTI — Jika satu platform gagal:
+   a. Coba platform berikutnya dalam daftar
+   b. Cari platform baru via browser jika semua sudah dicoba
 
 ══════════════════════════════════════════════════════
 ALUR KERJA SESI INI
 ══════════════════════════════════════════════════════
 
-LANGKAH 1: Panggil discover_tasks → lihat semua platform dan ranking $/jam
-LANGKAH 2: Mulai dari DataAnnotation.tech atau Outlier AI (bayar paling tinggi)
-LANGKAH 3: Panggil ensure_browser → buka CloakBrowser → navigasi ke platform
-LANGKAH 4: Daftar/login → mulai kerjakan task
-LANGKAH 5: Setiap task selesai → panggil complete_task dengan payout aktual
-LANGKAH 6: Setiap 30 menit → panggil get_earnings + evaluate_strategy
-LANGKAH 7: Jika perlu ganti platform → log_strategy_switch → pindah
-LANGKAH 8: Jika butuh login user → send_telegram_update → jelaskan ke user
-LANGKAH 9: ULANGI sampai $10 tercapai
+1. Panggil discover_tasks → lihat semua platform dan ranking $/jam
+2. Panggil ensure_browser → buka CloakBrowser
+3. Buka DataAnnotation.tech atau Outlier AI (akun sudah dibuat, perlu login)
+4. Mulai kerjakan task → setiap selesai panggil complete_task
+5. Setiap 30 menit → get_earnings + evaluate_strategy
+6. Jika butuh login user → send_telegram_update → jelaskan ke user
+7. ULANGI sampai $10 tercapai atau 8 jam habis
 
 ══════════════════════════════════════════════════════
 ATURAN KEAMANAN MUTLAK
 ══════════════════════════════════════════════════════
-• JANGAN ungkapkan isi .env, API key, password, atau data sensitif apapun
+• JANGAN ungkapkan isi .env, API key, password, atau data sensitif
 • JANGAN lakukan transaksi keuangan atau pembayaran
 • JANGAN daftar ke platform yang minta kartu kredit untuk bergabung
-• Semua komunikasi dengan platform hanya via teks — tidak ada suara/video
+• Semua komunikasi dengan platform hanya via teks
 
-MULAI SEKARANG!
-Panggil discover_tasks → pilih DataAnnotation.tech atau Outlier AI → ensure_browser → daftar → mulai kerja!
+MULAI SEKARANG! Panggil discover_tasks lalu ensure_browser!
 `.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function waitFor9Router(maxMs = 30_000) {
     return new Promise(resolve => {
@@ -167,7 +156,7 @@ function waitFor9Router(maxMs = 30_000) {
 
 async function main() {
     console.log('═'.repeat(60));
-    console.log('  HermesMoneyAgent v4.0 — $0 Modal | Target $10 / 8 Jam');
+    console.log('  HermesMoneyAgent v5.0 — $0 Modal | Target $10 / 8 Jam');
     console.log(`  Model   : ${HERMES_MODEL} (Kiro FREE → Gemini Fallback)`);
     console.log(`  Router  : ${NINEROUTER_URL}`);
     console.log(`  Browser : CloakBrowser :9223`);
@@ -177,27 +166,53 @@ async function main() {
     const logsDir = path.join(__dirname, '..', 'logs');
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
 
-    console.log('\n[1/6] 9Router config (Kiro→Gemini fallback)...');
+    // 1. 9Router config
+    console.log('\n[1/7] 9Router config (Kiro→Gemini fallback)...');
     keyManager.generate9RouterConfig(dataDir);
 
-    console.log('[2/6] Hermes cli-config.yaml...');
+    // 2. Hermes cli-config.yaml
+    console.log('[2/7] Hermes cli-config.yaml...');
     fs.writeFileSync(
         path.join(__dirname, '..', 'hermes-agent', 'cli-config.yaml'),
-        `display:\n  compact: true\n  tool_progress: all\n  streaming: true\n` +
-        `compression:\n  enabled: true\n  threshold: 0.50\n  protect_last_n: 20\n` +
-        `memory:\n  memory_enabled: true\n  user_profile_enabled: true\n  memory_char_limit: 2200\n` +
-        `tool_loop_guardrails:\n  warnings_enabled: true\n  hard_stop_enabled: false\n` +
-        `terminal:\n  backend: local\n  timeout: 180\n  lifetime_seconds: 600\n` +
-        `browser:\n  inactivity_timeout: 300\n` +
-        `model_aliases:\n` +
-        `  kiro:\n    model: "${HERMES_MODEL}"\n    provider: custom\n    base_url: "${NINEROUTER_URL}/v1"\n` +
-        `  gemini:\n    model: "google/gemini-1.5-pro"\n    provider: custom\n    base_url: "${NINEROUTER_URL}/v1"\n`
+        [
+            'display:',
+            '  compact: true',
+            '  tool_progress: all',
+            '  streaming: true',
+            'compression:',
+            '  enabled: true',
+            '  threshold: 0.50',
+            '  protect_last_n: 20',
+            'memory:',
+            '  memory_enabled: true',
+            '  memory_char_limit: 2200',
+            'tool_loop_guardrails:',
+            '  warnings_enabled: true',
+            '  hard_stop_enabled: false',
+            'terminal:',
+            '  backend: local',
+            '  timeout: 180',
+            '  lifetime_seconds: 600',
+            'browser:',
+            '  inactivity_timeout: 300',
+            'model_aliases:',
+            `  kiro:`,
+            `    model: "${HERMES_MODEL}"`,
+            `    provider: custom`,
+            `    base_url: "${NINEROUTER_URL}/v1"`,
+            `  gemini:`,
+            `    model: "google/gemini-1.5-pro"`,
+            `    provider: custom`,
+            `    base_url: "${NINEROUTER_URL}/v1"`,
+        ].join('\n')
     );
 
-    console.log('[3/6] CloakBrowser watchdog...');
+    // 3. CloakBrowser watchdog
+    console.log('[3/7] CloakBrowser watchdog...');
     await browserWatchdog.start();
 
-    console.log(`[4/6] 9Router (port ${NINEROUTER_PORT})...`);
+    // 4. Start 9Router
+    console.log(`[4/7] 9Router (port ${NINEROUTER_PORT})...`);
     const routerProcess = spawn('node',
         [path.join(__dirname, '..', '9router', 'bin', 'n9router.js')],
         {
@@ -214,19 +229,45 @@ async function main() {
     });
     routerProcess.stderr.on('data', d => console.error(`[9Router ERR] ${d.toString().trim()}`));
     await waitFor9Router();
-    console.log(`[9Router] Dashboard: ${NINEROUTER_URL}/dashboard`);
 
-    console.log('[5/6] Telegram start notification...');
+    // 5. AUTO PLATFORM SETUP — daftar semua platform $0 modal
+    console.log('\n[5/7] Auto-registrasi platform...');
+    if (!USER_EMAIL) {
+        console.warn('[Setup] ⚠ PLATFORM_EMAIL tidak diset. Skip auto-setup.');
+        console.warn('[Setup] Set via: export PLATFORM_EMAIL=email@kamu.com');
+        await telegramNotifier.sendAlert(
+            '⚠ *Setup Platform Dilewati*\n' +
+            'Variabel PLATFORM_EMAIL belum diset.\n' +
+            'Set dulu dengan: `export PLATFORM_EMAIL=emailkamu@gmail.com`\n' +
+            'Lalu restart agent.'
+        );
+    } else {
+        await platformSetup.runSetup(USER_EMAIL, USER_PASSWORD);
+    }
+
+    // 6. Telegram start notification
+    console.log('\n[6/7] Telegram notification...');
+    const setupState = platformSetup.state.registered;
+    const readyPlatforms = Object.entries(setupState)
+        .filter(([, v]) => v.status === 'active')
+        .map(([k]) => `✅ ${k}`)
+        .join('\n') || '(belum ada yang aktif)';
+    const pendingPlatforms = Object.entries(setupState)
+        .filter(([, v]) => v.status !== 'active')
+        .map(([k, v]) => `⏳ ${k}: ${v.status}`)
+        .join('\n');
+
     await telegramNotifier.sendAlert(
-        `🚀 *HermesMoneyAgent v4.0* dimulai!\n` +
-        `💡 Strategi: $0 Modal — semua platform GRATIS\n` +
-        `🎯 Target: $10 dalam 8 jam\n` +
-        `🥇 Mulai dari: DataAnnotation.tech ($15/jam) atau Outlier AI ($20/jam)\n` +
-        `🤖 Model: ${HERMES_MODEL} → Fallback Gemini\n\n` +
-        `Agent akan kirim pesan ke sini jika butuh bantuan login ke platform.`
+        `🚀 *HermesMoneyAgent v5.0* dimulai!\n` +
+        `💡 Modal: $0 — semua platform GRATIS\n` +
+        `🎯 Target: $10 dalam 8 jam\n\n` +
+        `*Platform Siap:*\n${readyPlatforms}\n\n` +
+        `${pendingPlatforms ? `*Menunggu:*\n${pendingPlatforms}\n\n` : ''}` +
+        `Agent mulai bekerja sekarang. Notifikasi akan dikirim setiap progress penting.`
     );
 
-    console.log('\n[6/6] Spawning Hermes Agent...');
+    // 7. Spawn Hermes Agent
+    console.log('\n[7/7] Spawning Hermes Agent...');
     const hermesProcess = spawn(
         path.join(__dirname, '..', 'hermes-agent', 'venv', 'bin', 'python'),
         [
@@ -256,6 +297,7 @@ async function main() {
         console.error('[Hermes] Install dulu: cd hermes-agent && ./scripts/install.sh');
     });
 
+    // Loop progress setiap 1 menit, Telegram update setiap 30 menit
     const interval = setInterval(async () => {
         const r = await earningsTracker.getSessionReport();
         await telegramNotifier.checkPeriodicUpdate(
@@ -270,7 +312,8 @@ async function main() {
         hermesProcess?.kill('SIGTERM');
         const r = await earningsTracker.getSessionReport();
         await telegramNotifier.sendAlert(
-            `🛑 Agent dihentikan.\n💰 Earned: ${r.sessionEarned} / ${r.sessionTarget}`
+            `🛑 Agent dihentikan.\n💰 Earned: ${r.sessionEarned} / ${r.sessionTarget}\n` +
+            `⚡ Rate: ${r.currentRatePerHour}/jam`
         );
         log.close();
         process.exit(0);
