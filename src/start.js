@@ -56,6 +56,7 @@ PERINTAH USER YANG AKAN DATANG VIA TELEGRAM:
   "toloka ok"     → User sudah login Toloka → kamu mulai kerja di Toloka
   "da ok"         → DataAnnotation.tech siap → mulai kerja
   "outlier ok"    → Outlier AI siap → mulai kerja
+  "fastwork ok"   → User sudah login Fastwork.id (fastworker.id) → kamu mulai kerja di Fastwork.id
   "status"        → Panggil get_earnings, kirim laporan lengkap
   "pause"         → Berhenti ambil task baru sementara
   "resume"        → Lanjut kerja
@@ -70,6 +71,7 @@ PLATFORM $0 MODAL (urutan prioritas):
   5. Remotasks ($2/jam) — anotasi teks
   6. Textbroker ($3/jam) — artikel OpenOrder langsung
   7. iWriter ($2.5/jam) — artikel blog
+  8. Fastwork.id (IDR 75k+/project, ~$5) — penulisan artikel, translation, copywriting (platform Indonesia, mudah verifikasi, transfer bank lokal)
 
 ATURAN KERJA:
   ✅ Hanya kerja via teks — tidak ada telepon, video call
@@ -105,7 +107,7 @@ async function main() {
     console.log('  HermesMoneyAgent v7.0 — Gateway Mode + Native Telegram');
     console.log(`  Model   : ${HERMES_MODEL}`);
     console.log(`  Router  : ${NINEROUTER_URL}`);
-    console.log(`  Browser : CloakBrowser :9223`);
+    console.log(`  Browser : CloakBrowser :9222`);
     console.log('═'.repeat(60));
     console.log('');
     console.log('  Hermes Gateway Mode:');
@@ -128,13 +130,14 @@ async function main() {
 
     // ── 3. 9Router ────────────────────────────────────────────────────────
     console.log(`[3/6] 9Router (port ${NINEROUTER_PORT})...`);
-    const routerProcess = spawn('node',
-        [path.join(__dirname, '..', '9router', 'bin', 'n9router.js')],
+    const routerProcess = spawn('npx',
+        ['next', 'dev', '-p', String(NINEROUTER_PORT)],
         {
             env: Object.assign({}, process.env, {
                 PORT: String(NINEROUTER_PORT), DATA_DIR: dataDir,
                 HOSTNAME: '0.0.0.0', NEXT_PUBLIC_BASE_URL: NINEROUTER_URL,
             }),
+            cwd: path.join(__dirname, '..', '9router'),
             stdio: 'pipe',
         }
     );
@@ -175,6 +178,7 @@ async function main() {
         `• \`toloka ok\` — setelah login Toloka\n` +
         `• \`da ok\` — setelah verifikasi DataAnnotation\n` +
         `• \`outlier ok\` — setelah verifikasi Outlier AI\n` +
+        `• \`fastwork ok\` — setelah login Fastwork.id\n` +
         `• \`status\` — laporan earning saat ini\n` +
         `• \`pause\` / \`resume\` — jeda dan lanjut\n` +
         `• \`ganti ke Textbroker\` — paksa pindah platform\n` +
@@ -185,7 +189,7 @@ async function main() {
     // ── 6. Spawn Hermes Gateway ───────────────────────────────────────────
     console.log('\n[6/6] Spawning Hermes Gateway...');
     const hermesDir  = path.join(__dirname, '..', 'hermes-agent');
-    const hermesPy   = path.join(hermesDir, 'venv', 'bin', 'python');
+    const hermesPy   = path.join(hermesDir, '..', 'venv', 'bin', 'python');
     const hermesCli  = path.join(hermesDir, 'cli.py');
 
     // Hermes Gateway: --gateway flag mengaktifkan mode gateway (terima Telegram)
@@ -195,6 +199,10 @@ async function main() {
             hermesCli,
             '--gateway',           // Aktifkan gateway mode (Telegram native)
             '--query', INITIAL_PROMPT,  // Prompt awal untuk sesi pertama
+            '--model', 'kiro',
+            '--provider', 'custom',
+            '--base_url', `${NINEROUTER_URL}/v1`,
+            '--api_key', NINEROUTER_KEY,
         ],
         {
             env: Object.assign({}, process.env, {
@@ -206,12 +214,13 @@ async function main() {
                 TELEGRAM_CHAT_ID:   process.env.TELEGRAM_CHAT_ID   || '',
                 // CloakBrowser
                 CLOAK_CDP_URL:      browserWatchdog.CDP_URL,
-                CLOAK_DEBUG_PORT:   '9223',
+                CLOAK_DEBUG_PORT:   '9222',
                 // Platform credentials untuk setup
                 PLATFORM_EMAIL:     USER_EMAIL,
                 PLATFORM_PASSWORD:  USER_PASSWORD,
                 // Hermes home
                 HERMES_HOME:        process.env.HERMES_HOME || path.join(process.env.HOME || '', '.hermes'),
+                HERMES_MODEL:       HERMES_MODEL,
             }),
             cwd: hermesDir,
             stdio: 'pipe',

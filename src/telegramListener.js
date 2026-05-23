@@ -110,6 +110,9 @@ class TelegramListener extends EventEmitter {
             'iwriter ok':    'iWriter',
             'scale ok':      'Scale AI',
             'fastwork ok':   'Fastwork.id',
+            'fastworker ok': 'Fastwork.id',
+            'fastwork.id ok': 'Fastwork.id',
+            'fastworker.id ok': 'Fastwork.id',
         };
 
         for (const [cmd, platform] of Object.entries(platformOkMap)) {
@@ -221,7 +224,8 @@ class TelegramListener extends EventEmitter {
             `• \`da ok\` — DataAnnotation.tech sudah verifikasi email\n` +
             `• \`outlier ok\` — Outlier AI sudah verifikasi email\n` +
             `• \`remotasks ok\` — Remotasks sudah siap\n` +
-            `• \`textbroker ok\` — Textbroker sudah siap\n\n` +
+            `• \`textbroker ok\` — Textbroker sudah siap\n` +
+            `• \`fastwork ok\` — Fastwork.id sudah login\n\n` +
             `*Kontrol Agent:*\n` +
             `• \`status\` — Lihat laporan earning sesi ini\n` +
             `• \`pause\` — Hentikan sementara (tidak ambil task baru)\n` +

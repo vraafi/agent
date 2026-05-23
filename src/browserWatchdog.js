@@ -13,6 +13,20 @@ const net        = require('net');
 const { exec }   = require('child_process');
 const path       = require('path');
 const fs         = require('fs');
+const { execSync } = require('child_process');
+
+function getHostIP() {
+    if (process.platform === 'linux') {
+        try {
+            const ip = execSync("ip route | grep default | awk '{print $3}'").toString().trim();
+            if (ip) return ip;
+        } catch (_) {}
+        return '172.24.48.1';
+    }
+    return '127.0.0.1';
+}
+
+const HOST_IP = getHostIP();
 
 // ── KONFIGURASI ──────────────────────────────────────────────────────────────
 const CHROME_PATH  = String(
@@ -21,9 +35,9 @@ const CHROME_PATH  = String(
 );
 const PROFILE_DIR  = String(
     process.env.CLOAK_PROFILE_DIR ||
-    String.raw`bin\cloak_profile`
+    String.raw`C:\Users\user\.antigravity\Nexus-DualBrain-AI\bin\cloak_profile`
 );
-const DEBUG_PORT   = Number(process.env.CLOAK_DEBUG_PORT || 9223);
+const DEBUG_PORT   = Number(process.env.CLOAK_DEBUG_PORT || 9222);
 const CHECK_INTERVAL_MS = 5_000;   // cek setiap 5 detik
 const RESTART_COOLDOWN_MS = 8_000; // tunggu sebelum restart berikutnya
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,23 +56,28 @@ function isPortActive(port = DEBUG_PORT) {
             .once('connect', () => { sock.destroy(); resolve(true); })
             .once('timeout',  () => { sock.destroy(); resolve(false); })
             .once('error',    () => { sock.destroy(); resolve(false); })
-            .connect(port, '127.0.0.1');
+            .connect(port, HOST_IP);
     });
 }
 
 /** Hapus lock files agar Chrome tidak loop error. */
 function clearLockFiles() {
     const locks = ['LOCK', 'SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+    let targetDir = PROFILE_DIR;
+    if (process.platform === 'linux' && targetDir.startsWith('C:\\')) {
+        targetDir = '/mnt/c/' + targetDir.substring(3).replace(/\\/g, '/');
+    }
     for (const f of locks) {
-        const p = path.join(PROFILE_DIR, f);
+        const p = path.join(targetDir, f);
         try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) {}
     }
 }
 
 /** Matikan semua proses chrome yang masih jalan. */
 function killCloakProcesses() {
+    const cmd = process.platform === 'linux' ? 'taskkill.exe' : 'taskkill';
     return new Promise(resolve => {
-        exec('taskkill /F /IM chrome.exe', () => resolve());
+        exec(`${cmd} /F /IM chrome.exe`, () => resolve());
     });
 }
 
@@ -71,6 +90,7 @@ function launchDetached() {
         `"${CHROME_PATH}"`,
         `--user-data-dir="${PROFILE_DIR}"`,
         `--remote-debugging-port=${DEBUG_PORT}`,
+        `--remote-allow-origins=*`,
         `--disable-blink-features=AutomationControlled`,
         `--no-sandbox`,
         `--start-maximized`,
@@ -83,8 +103,9 @@ function launchDetached() {
         `-Arguments @{CommandLine='${command}'}`,
     ].join(' ');
 
+    const cmd = process.platform === 'linux' ? 'powershell.exe' : 'powershell';
     return new Promise((resolve, reject) => {
-        exec(`powershell -Command "${ps}"`, (err, stdout, stderr) => {
+        exec(`${cmd} -Command "${ps}"`, (err, stdout, stderr) => {
             if (err) { reject(new Error(stderr || err.message)); }
             else { resolve(stdout.trim()); }
         });
@@ -165,7 +186,7 @@ async function ensureRunning() {
         console.log('[BrowserWatchdog] Browser tidak aktif, me-restart sekarang...');
         await restartBrowser();
     }
-    return { cdpUrl: `http://127.0.0.1:${DEBUG_PORT}`, port: DEBUG_PORT };
+    return { cdpUrl: `http://${HOST_IP}:${DEBUG_PORT}`, port: DEBUG_PORT };
 }
 
-module.exports = { start, stop, ensureRunning, isPortActive, CDP_URL: `http://127.0.0.1:${DEBUG_PORT}` };
+module.exports = { start, stop, ensureRunning, isPortActive, CDP_URL: `http://${HOST_IP}:${DEBUG_PORT}` };

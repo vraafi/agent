@@ -19,7 +19,7 @@ import time
 # ── KONFIGURASI ─────────────────────────────────────────────────────────────
 CHROME_PATH = r"C:\Users\user\.antigravity\Nexus-DualBrain-AI\bin\cloak\chrome.exe"
 PROFILE_DIR = r"bin\cloak_profile"
-DEBUG_PORT  = 9223
+DEBUG_PORT  = 9222
 # ─────────────────────────────────────────────────────────────────────────────
 
 

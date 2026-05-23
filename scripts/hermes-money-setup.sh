@@ -217,8 +217,8 @@ ok "~/.hermes/config.yaml tertulis"
 echo ""
 echo "[4/4] Membuat cron jobs Hermes..."
 
-PYTHON="$HERMES_AGENT_DIR/venv/bin/python"
-HERMES_CLI="$HERMES_AGENT_DIR/hermes"
+PYTHON="$(cd "$(dirname "$0")/../venv" && pwd)/bin/python"
+HERMES_CLI="$(cd "$(dirname "$0")/../venv" && pwd)/bin/hermes"
 
 if [[ ! -f "$PYTHON" ]]; then
     warn "Python venv hermes-agent tidak ditemukan di: $PYTHON"

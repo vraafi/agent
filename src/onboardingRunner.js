@@ -18,8 +18,8 @@
 const { chromium } = require('playwright');
 
 // Konfigurasi CloakBrowser
-const CLOAK_CDP_URL   = process.env.CLOAK_CDP_URL   || 'http://127.0.0.1:9223';
-const CLOAK_CDP_PORT  = process.env.CLOAK_DEBUG_PORT || '9223';
+const CLOAK_CDP_URL   = process.env.CLOAK_CDP_URL   || 'http://127.0.0.1:9222';
+const CLOAK_CDP_PORT  = process.env.CLOAK_DEBUG_PORT || '9222';
 
 let _browser = null;
 let _context = null;
