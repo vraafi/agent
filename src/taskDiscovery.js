@@ -1,317 +1,384 @@
 /**
- * taskDiscovery.js
- * ================
- * Menemukan peluang penghasilan online yang 100% bisa dikerjakan
- * secara otonom oleh AI agent tanpa perlu telepon atau video call.
+ * taskDiscovery.js — Strategi $0 Modal
+ * =====================================
+ * SEMUA platform di sini gratis 100% untuk bergabung dan mulai bekerja.
+ * Tidak ada biaya pendaftaran, tidak ada subscription, tidak ada modal.
+ *
+ * Kriteria platform yang masuk daftar ini:
+ *   ✅ Gratis daftar ($0)
+ *   ✅ Bisa dikerjakan AI 100% otonom
+ *   ✅ Tidak butuh telepon / video call
+ *   ✅ Pembayaran via PayPal atau Payoneer (keduanya gratis dibuat)
+ *   ✅ Bisa mulai hari ini tanpa menunggu approval berbulan-bulan
  *
  * Target: $10 / 8 jam = $1.25/jam minimum.
- *
- * Prioritas platform (dari paling mudah otonom ke paling kompleks):
- *   Tier 1 — Microtask langsung (tidak perlu apply, bayar per task)
- *   Tier 2 — Freelance content/writing (perlu login, apply, tapi async)
- *   Tier 3 — Riset & data (scraping, annotation, summarization)
  */
 
 'use strict';
 
 class TaskDiscovery {
     constructor() {
-        // Platform yang bisa dikerjakan 100% otonom oleh AI
-        // KRITERIA WAJIB: tidak ada telepon, tidak ada video call, semua teks/async
-        this.platforms = {
-            // TIER 1: Microtask — langsung kerja, bayar per task
-            tier1: [
-                {
-                    name: 'Toloka',
-                    url: 'https://toloka.ai',
-                    avgPayPerHour: 1.5,
-                    taskTypes: ['image_classification', 'text_moderation', 'relevance_rating', 'translation_check'],
-                    autonomous: true,
-                    notes: 'Login via Google. Task tersedia 24/7. Cocok untuk AI.',
-                },
-                {
-                    name: 'Remotasks',
-                    url: 'https://www.remotasks.com',
-                    avgPayPerHour: 2.0,
-                    taskTypes: ['lidar_annotation', 'text_categorization', 'image_labeling', 'ai_data_labeling'],
-                    autonomous: true,
-                    notes: 'Harus lulus onboarding quiz. AI bisa mengerjakan semua task teks.',
-                },
-                {
-                    name: 'Scale AI Rapid',
-                    url: 'https://scale.com/ai-tasker',
-                    avgPayPerHour: 2.5,
-                    taskTypes: ['rlhf_rating', 'instruction_following', 'qa_pairs', 'text_comparison'],
-                    autonomous: true,
-                    notes: 'RLHF tasks — sempurna untuk AI. Bayar lebih tinggi dari Toloka.',
-                },
-                {
-                    name: 'DataAnnotation.tech',
-                    url: 'https://www.dataannotation.tech',
-                    avgPayPerHour: 15.0,
-                    taskTypes: ['code_review', 'ai_conversation_rating', 'instruction_writing', 'response_ranking'],
-                    autonomous: true,
-                    notes: 'TERBAIK untuk AI agent — rating/menulis kode dan percakapan AI. $15+/jam.',
-                    priority: 'HIGH',
-                },
-                {
-                    name: 'Outlier AI',
-                    url: 'https://outlier.ai',
-                    avgPayPerHour: 20.0,
-                    taskTypes: ['ai_trainer', 'code_writing', 'math_problems', 'creative_writing'],
-                    autonomous: true,
-                    notes: 'Platform AI training khusus. Bayar sangat tinggi. Daftar via email.',
-                    priority: 'HIGH',
-                },
-                {
-                    name: 'Appen',
-                    url: 'https://connect.appen.com',
-                    avgPayPerHour: 1.8,
-                    taskTypes: ['search_evaluation', 'social_media_rating', 'translation', 'transcription'],
-                    autonomous: true,
-                    notes: 'Banyak task search relevance — AI sangat cocok.',
-                },
-            ],
-
-            // TIER 2: Freelance content — perlu login user, lalu AI kerjakan sendiri
-            tier2: [
-                {
-                    name: 'Fastwork.id',
-                    url: 'https://fastwork.id',
-                    avgPayPerTask: 50000, // IDR
-                    taskTypes: ['penulisan_artikel', 'copywriting', 'terjemahan', 'riset_data', 'seo_content'],
-                    autonomous: true,
-                    notes: 'Marketplace freelance Indonesia. AI bisa tulis artikel, terjemah, SEO.',
-                    loginRequired: true,
-                    noPhoneVC: true,
-                },
-                {
-                    name: 'Fiverr',
-                    url: 'https://www.fiverr.com',
-                    avgPayPerTask: 5.0,
-                    taskTypes: ['article_writing', 'proofreading', 'translation', 'data_research', 'seo'],
-                    autonomous: true,
-                    notes: 'Buat gig writing/translation. Komunikasi hanya via chat. Tidak perlu VC.',
-                    loginRequired: true,
-                    noPhoneVC: true,
-                },
-                {
-                    name: 'Upwork',
-                    url: 'https://www.upwork.com',
-                    avgPayPerHour: 8.0,
-                    taskTypes: ['data_entry', 'web_research', 'article_writing', 'virtual_assistant', 'translation'],
-                    autonomous: true,
-                    notes: 'Filter: "No video interview required". Apply via cover letter teks saja.',
-                    loginRequired: true,
-                    noPhoneVC: true,
-                    filterStrategy: 'Cari job dengan badge "No video interview". Apply max 10 job/hari.',
-                },
-                {
-                    name: 'PeoplePerHour',
-                    url: 'https://www.peopleperhour.com',
-                    avgPayPerHour: 6.0,
-                    taskTypes: ['content_writing', 'data_analysis', 'research', 'translation'],
-                    autonomous: true,
-                    notes: 'Mirip Upwork tapi lebih kecil. Kontak via pesan teks saja.',
-                    loginRequired: true,
-                    noPhoneVC: true,
-                },
-                {
-                    name: 'LinkedIn (Freelance)',
-                    url: 'https://www.linkedin.com/jobs',
-                    avgPayPerProject: 20.0,
-                    taskTypes: ['content_writing', 'research', 'data_analysis', 'copywriting'],
-                    autonomous: true,
-                    notes: 'Cari "contract" atau "freelance" writing/research. Apply via Easy Apply.',
-                    loginRequired: true,
-                    noPhoneVC: false, // Perlu screening — filter hati-hati
-                    filterStrategy: 'Cari "Easy Apply" + "Remote" + tidak ada syarat telepon di deskripsi.',
-                },
-            ],
-
-            // TIER 3: Platform riset & konten khusus
-            tier3: [
-                {
-                    name: 'Textbroker',
-                    url: 'https://www.textbroker.com',
-                    avgPayPer1000Words: 1.3,
-                    taskTypes: ['article_writing', 'product_description', 'blog_post'],
-                    autonomous: true,
-                    notes: 'OpenOrder = kerja langsung tanpa apply. AI menulis, submit, dapat bayaran.',
-                    loginRequired: true,
-                    noPhoneVC: true,
-                },
-                {
-                    name: 'iWriter',
-                    url: 'https://www.iwriter.com',
-                    avgPayPer500Words: 1.5,
-                    taskTypes: ['article_writing', 'blog_post', 'product_review'],
-                    autonomous: true,
-                    notes: 'Platform penulisan artikel. Bayar per artikel. Tidak perlu interview.',
-                    loginRequired: true,
-                    noPhoneVC: true,
-                },
-                {
-                    name: 'Clickworker',
-                    url: 'https://www.clickworker.com',
-                    avgPayPerHour: 1.2,
-                    taskTypes: ['text_creation', 'categorization', 'web_research', 'proofreading'],
-                    autonomous: true,
-                    notes: 'Mirip Toloka. Task tersedia langsung setelah registrasi.',
-                    loginRequired: true,
-                    noPhoneVC: true,
-                },
-            ],
-        };
-
-        // Strategi fallback jika earning rate < target
-        this.fallbackStrategies = [
-            'switch_to_higher_paying_tier1',  // Coba DataAnnotation.tech / Outlier AI
-            'parallel_platforms',              // Jalankan beberapa platform sekaligus
-            'focus_on_content_writing',        // Textbroker + iWriter (banyak order tersedia)
-            'apply_upwork_batch',              // Apply 10 job Upwork sekaligus
-            'seek_new_platforms',              // Cari platform baru via pencarian browser
+        /**
+         * PLATFORM TIER 1 — Microtask Langsung
+         * Tidak perlu apply, tidak perlu nunggu client, langsung kerja = langsung bayar.
+         * INI ADALAH PRIORITAS UTAMA dengan modal $0.
+         */
+        this.tier1 = [
+            {
+                name: 'DataAnnotation.tech',
+                url: 'https://www.dataannotation.tech',
+                costToJoin: 0,
+                avgPayPerHour: 15,
+                withdrawal: 'PayPal (gratis)',
+                taskTypes: [
+                    'rating_respons_ai',      // "Mana jawaban AI yang lebih baik?"
+                    'menulis_instruksi',       // Tulis instruksi untuk AI
+                    'review_kode_ai',          // Review kode yang ditulis AI
+                    'percakapan_ai',           // Tulis percakapan/skenario untuk melatih AI
+                ],
+                howToStart: 'Daftar email → tes singkat (bisa dikerjakan AI) → langsung dapat task',
+                autonomous: true,
+                priority: 1,
+                notes: 'TERBAIK untuk AI agent. Task = melatih AI lain. Bayar $15/jam rata-rata.',
+            },
+            {
+                name: 'Outlier AI',
+                url: 'https://outlier.ai',
+                costToJoin: 0,
+                avgPayPerHour: 20,
+                withdrawal: 'Stripe (gratis)',
+                taskTypes: [
+                    'ai_trainer',              // Latih model AI
+                    'menulis_kode',            // Tulis kode yang diminta
+                    'soal_matematika',         // Jawab soal matematika
+                    'creative_writing',        // Penulisan kreatif
+                ],
+                howToStart: 'Daftar email → tes keahlian → task langsung tersedia',
+                autonomous: true,
+                priority: 1,
+                notes: 'Bayar TERTINGGI ($20+/jam). Cocok sempurna untuk AI. Sering butuh AI trainer.',
+            },
+            {
+                name: 'Toloka',
+                url: 'https://toloka.ai',
+                costToJoin: 0,
+                avgPayPerHour: 1.5,
+                withdrawal: 'PayPal / Payoneer (keduanya gratis)',
+                taskTypes: [
+                    'klasifikasi_gambar',      // Ini foto apa?
+                    'moderasi_teks',           // Apakah konten ini aman?
+                    'rating_relevansi',        // Apakah hasil pencarian relevan?
+                    'cek_terjemahan',          // Terjemahan ini benar?
+                    'jawab_pertanyaan',        // Jawab pertanyaan sederhana
+                ],
+                howToStart: 'Login Google → langsung ada ratusan task tersedia 24/7',
+                autonomous: true,
+                priority: 2,
+                notes: 'Volume task sangat banyak. Bisa kerjakan 50-100 task/jam. Bayar kecil tapi stabil.',
+            },
+            {
+                name: 'Remotasks',
+                url: 'https://www.remotasks.com',
+                costToJoin: 0,
+                avgPayPerHour: 2,
+                withdrawal: 'PayPal (gratis)',
+                taskTypes: [
+                    'anotasi_teks',            // Tandai entitas dalam teks
+                    'kategorisasi',            // Kategorikan item ini
+                    'anotasi_gambar',          // Gambar kotak di sekitar objek
+                    'ai_data_labeling',        // Label data untuk AI
+                ],
+                howToStart: 'Daftar email → lulus onboarding quiz (singkat, bisa AI jawab) → kerja',
+                autonomous: true,
+                priority: 2,
+                notes: 'Quiz onboarding bisa dilewati AI. Task tersedia banyak. Bayar mingguan.',
+            },
+            {
+                name: 'Scale AI (Rapid)',
+                url: 'https://scale.com/ai-tasker',
+                costToJoin: 0,
+                avgPayPerHour: 2.5,
+                withdrawal: 'PayPal (gratis)',
+                taskTypes: [
+                    'rlhf_rating',             // Bandingkan 2 jawaban AI
+                    'instruction_following',   // Ikuti instruksi dan nilai hasilnya
+                    'qa_pairs',                // Buat pasangan pertanyaan-jawaban
+                    'text_comparison',         // Bandingkan 2 teks
+                ],
+                howToStart: 'Daftar email → verifikasi → task tersedia via dashboard',
+                autonomous: true,
+                priority: 2,
+                notes: 'RLHF task — sangat cocok untuk AI. Bayar lebih dari Toloka.',
+            },
+            {
+                name: 'Appen',
+                url: 'https://connect.appen.com',
+                costToJoin: 0,
+                avgPayPerHour: 1.8,
+                withdrawal: 'PayPal / bank transfer (gratis)',
+                taskTypes: [
+                    'evaluasi_pencarian',      // Apakah hasil Google ini relevan?
+                    'rating_media_sosial',     // Rating konten media sosial
+                    'transkripsi',             // Transkrip audio pendek
+                    'terjemahan',              // Terjemah teks pendek
+                ],
+                howToStart: 'Daftar → tes bahasa Inggris → apply ke project → kerja',
+                autonomous: true,
+                priority: 3,
+                notes: 'Project bisa berbulan-bulan. Stabil tapi butuh approval dulu.',
+            },
+            {
+                name: 'Clickworker',
+                url: 'https://www.clickworker.com',
+                costToJoin: 0,
+                avgPayPerHour: 1.2,
+                withdrawal: 'PayPal / SEPA (gratis)',
+                taskTypes: [
+                    'pembuatan_teks',          // Tulis teks pendek
+                    'kategorisasi',            // Kategorikan produk/item
+                    'riset_web',               // Cari info spesifik di web
+                    'proofreading',            // Periksa ejaan/tata bahasa
+                ],
+                howToStart: 'Daftar email → tes → task langsung tersedia',
+                autonomous: true,
+                priority: 3,
+                notes: 'Jumlah task fluktuatif. Bayar rendah tapi tidak perlu modal apapun.',
+            },
         ];
+
+        /**
+         * PLATFORM TIER 2 — Penulisan Konten
+         * Gratis daftar, langsung ambil order tanpa menunggu client.
+         * Cocok untuk AI yang bisa menulis artikel berkualitas.
+         */
+        this.tier2 = [
+            {
+                name: 'Textbroker',
+                url: 'https://www.textbroker.com',
+                costToJoin: 0,
+                avgPayPer1000Words: 1.3,  // Level 3
+                avgPayPerHour: 3,
+                withdrawal: 'PayPal (gratis, minimal $10)',
+                taskTypes: [
+                    'artikel_blog',
+                    'deskripsi_produk',
+                    'konten_website',
+                    'press_release',
+                ],
+                howToStart: 'Daftar → tulis contoh artikel → dapat level rating → ambil OpenOrder langsung',
+                autonomous: true,
+                priority: 2,
+                notes: 'OpenOrder = ratusan artikel tersedia, langsung ambil & tulis tanpa menunggu. $0 modal.',
+            },
+            {
+                name: 'iWriter',
+                url: 'https://www.iwriter.com',
+                costToJoin: 0,
+                avgPayPer500Words: 1.5,
+                avgPayPerHour: 2.5,
+                withdrawal: 'PayPal (gratis, minimal $20)',
+                taskTypes: [
+                    'artikel_blog',
+                    'review_produk',
+                    'konten_seo',
+                ],
+                howToStart: 'Daftar → langsung lihat dan ambil order tersedia → tulis → submit',
+                autonomous: true,
+                priority: 2,
+                notes: 'Sistem mirip Textbroker. Banyak order tersedia. AI bisa kerjakan semua.',
+            },
+        ];
+
+        /**
+         * PLATFORM TIER 3 — Freelance (Butuh Login User, Lalu AI Otonom)
+         * Gratis daftar. Butuh login dari user, setelah itu AI kerjakan sendiri.
+         * Lebih lambat (perlu dapat order), tapi bayar lebih tinggi per project.
+         *
+         * CATATAN: Upwork sekarang gratis apply (tidak perlu beli connects).
+         * Fiverr gratis buat gig tapi perlu waktu untuk dapat order pertama.
+         */
+        this.tier3 = [
+            {
+                name: 'Fastwork.id',
+                url: 'https://fastwork.id',
+                costToJoin: 0,
+                avgPayPerProject: 75000, // IDR ~$5
+                withdrawal: 'Transfer bank lokal (gratis)',
+                taskTypes: [
+                    'penulisan_artikel',
+                    'copywriting',
+                    'terjemahan_id_en',
+                    'riset_data',
+                    'penulisan_konten_media_sosial',
+                ],
+                howToStart: 'Login user → AI buat profil & listing → tunggu order atau lamar job tersedia',
+                autonomous: true,
+                loginRequired: true,
+                noPhoneVC: true,
+                priority: 3,
+                notes: 'Platform Indonesia. Tidak ada VC/telepon. Semua komunikasi via chat teks.',
+            },
+            {
+                name: 'Fiverr',
+                url: 'https://www.fiverr.com',
+                costToJoin: 0,
+                avgPayPerGig: 5,
+                withdrawal: 'PayPal (gratis, tapi ada 14 hari clearing)',
+                taskTypes: [
+                    'penulisan_artikel',
+                    'terjemahan',
+                    'proofreading',
+                    'riset_data',
+                    'penulisan_konten_seo',
+                ],
+                howToStart: 'Login user → AI buat gig menarik → tunggu buyer (bisa lama untuk baru)',
+                autonomous: true,
+                loginRequired: true,
+                noPhoneVC: true,
+                priority: 3,
+                notes: 'Gratis tapi slow start — susah dapat order pertama tanpa review. Lebih cocok jangka panjang.',
+                realism: 'Tidak realistis untuk target $10 hari ini jika akun baru.',
+            },
+        ];
+
+        // Semua platform digabung
+        this.allPlatforms = [...this.tier1, ...this.tier2, ...this.tier3];
+
+        // Konstanta target
+        this.TARGET_TOTAL    = 10.0;
+        this.SESSION_HOURS   = 8;
+        this.TARGET_PER_HOUR = this.TARGET_TOTAL / this.SESSION_HOURS; // $1.25
     }
 
     /**
-     * Discover tasks — entry point utama yang dipanggil Hermes.
-     * Mengembalikan daftar peluang yang diurutkan berdasarkan potensi $/jam.
+     * Entry point utama — return semua peluang diranking dari yang paling realistis
+     * untuk modal $0 dan kondisi hari ini.
      */
     async discoverTasks() {
-        console.log('[TaskDiscovery] Memindai platform untuk peluang otonom...');
+        console.log('[TaskDiscovery] Memindai platform $0 modal...');
 
         const opportunities = [];
 
         // Tier 1: Microtask langsung
-        for (const p of this.platforms.tier1) {
+        for (const p of this.tier1) {
             opportunities.push({
-                id: `TIER1-${p.name.toUpperCase().replace(/\s+/g, '-')}-${Date.now()}`,
-                platform: p.name,
-                tier: 1,
-                url: p.url,
-                title: p.taskTypes[0].replace(/_/g, ' '),
-                taskTypes: p.taskTypes,
-                estimatedPayPerHour: p.avgPayPerHour,
-                payout: parseFloat((p.avgPayPerHour * 0.1).toFixed(2)), // per ~6 menit
-                estTimeMins: 6,
-                autonomous: p.autonomous,
-                requiresPhone: false,
-                requiresVC: false,
-                loginRequired: p.loginRequired || false,
-                notes: p.notes,
-                priority: p.priority || 'NORMAL',
+                id:                    `T1-${p.name.replace(/\s+/g, '')}-${Date.now()}`,
+                platform:              p.name,
+                tier:                  1,
+                url:                   p.url,
+                costToJoin:            0,
+                taskTypes:             p.taskTypes,
+                title:                 `${p.taskTypes[0].replace(/_/g, ' ')} (${p.name})`,
+                estimatedPayPerHour:   p.avgPayPerHour,
+                payout:                parseFloat((p.avgPayPerHour * 0.1).toFixed(2)),
+                estTimeMins:           6,
+                withdrawal:            p.withdrawal,
+                howToStart:            p.howToStart,
+                autonomous:            true,
+                requiresPhone:         false,
+                requiresVC:            false,
+                loginRequired:         false,
+                priority:              p.priority,
+                notes:                 p.notes,
             });
         }
 
-        // Tier 2: Freelance content
-        for (const p of this.platforms.tier2) {
+        // Tier 2: Penulisan konten
+        for (const p of this.tier2) {
+            opportunities.push({
+                id:                    `T2-${p.name.replace(/\s+/g, '')}-${Date.now()}`,
+                platform:              p.name,
+                tier:                  2,
+                url:                   p.url,
+                costToJoin:            0,
+                taskTypes:             p.taskTypes,
+                title:                 `Penulisan artikel (${p.name})`,
+                estimatedPayPerHour:   p.avgPayPerHour,
+                payout:                p.avgPayPer500Words || p.avgPayPer1000Words || 1.5,
+                estTimeMins:           20,
+                withdrawal:            p.withdrawal,
+                howToStart:            p.howToStart,
+                autonomous:            true,
+                requiresPhone:         false,
+                requiresVC:            false,
+                loginRequired:         false,
+                priority:              p.priority,
+                notes:                 p.notes,
+            });
+        }
+
+        // Tier 3: Freelance (butuh login user)
+        for (const p of this.tier3) {
             if (p.noPhoneVC) {
                 opportunities.push({
-                    id: `TIER2-${p.name.toUpperCase().replace(/\s+/g, '-')}-${Date.now()}`,
-                    platform: p.name,
-                    tier: 2,
-                    url: p.url,
-                    title: `Freelance ${p.taskTypes[0].replace(/_/g, ' ')} di ${p.name}`,
-                    taskTypes: p.taskTypes,
-                    estimatedPayPerHour: p.avgPayPerHour || (p.avgPayPerTask / 1000) || 3.0,
-                    payout: p.avgPayPerTask || p.avgPayPerHour || 5.0,
-                    estTimeMins: 30,
-                    autonomous: p.autonomous,
-                    requiresPhone: false,
-                    requiresVC: false,
-                    loginRequired: p.loginRequired,
-                    notes: p.notes,
-                    filterStrategy: p.filterStrategy || null,
-                    priority: 'NORMAL',
+                    id:                  `T3-${p.name.replace(/\s+/g, '')}-${Date.now()}`,
+                    platform:            p.name,
+                    tier:                3,
+                    url:                 p.url,
+                    costToJoin:          0,
+                    taskTypes:           p.taskTypes,
+                    title:               `Freelance ${p.taskTypes[0].replace(/_/g, ' ')} (${p.name})`,
+                    estimatedPayPerHour: 3,
+                    payout:              p.avgPayPerGig || 5,
+                    estTimeMins:         30,
+                    withdrawal:          p.withdrawal,
+                    howToStart:          p.howToStart,
+                    autonomous:          true,
+                    requiresPhone:       false,
+                    requiresVC:          false,
+                    loginRequired:       true,
+                    priority:            p.priority,
+                    notes:               p.notes,
+                    realism:             p.realism || null,
                 });
             }
         }
 
-        // Tier 3: Konten khusus
-        for (const p of this.platforms.tier3) {
-            opportunities.push({
-                id: `TIER3-${p.name.toUpperCase()}-${Date.now()}`,
-                platform: p.name,
-                tier: 3,
-                url: p.url,
-                title: `${p.taskTypes[0].replace(/_/g, ' ')} di ${p.name}`,
-                taskTypes: p.taskTypes,
-                estimatedPayPerHour: p.avgPayPerHour || 2.0,
-                payout: p.avgPayPer500Words || p.avgPayPer1000Words || p.avgPayPerHour * 0.5,
-                estTimeMins: 20,
-                autonomous: p.autonomous,
-                requiresPhone: false,
-                requiresVC: false,
-                loginRequired: p.loginRequired,
-                notes: p.notes,
-                priority: 'NORMAL',
-            });
-        }
-
-        return this.rankOpportunities(opportunities);
+        return this._rank(opportunities);
     }
 
-    /**
-     * Urutkan berdasarkan: priority HIGH dulu, lalu $/jam tertinggi,
-     * lalu tidak butuh login (bisa langsung mulai).
-     */
-    rankOpportunities(opportunities) {
-        return opportunities.sort((a, b) => {
-            // HIGH priority dulu
-            if (a.priority === 'HIGH' && b.priority !== 'HIGH') return -1;
-            if (b.priority === 'HIGH' && a.priority !== 'HIGH') return 1;
-            // Yang tidak butuh login dulu
-            if (!a.loginRequired && b.loginRequired) return -1;
-            if (a.loginRequired && !b.loginRequired) return 1;
-            // Tertinggi $/jam
-            return b.estimatedPayPerHour - a.estimatedPayPerHour;
+    /** Rank: priority ASC, lalu $/jam DESC, lalu loginRequired ASC */
+    _rank(list) {
+        return list.sort((a, b) => {
+            if (a.priority !== b.priority) return a.priority - b.priority;
+            if (a.estimatedPayPerHour !== b.estimatedPayPerHour)
+                return b.estimatedPayPerHour - a.estimatedPayPerHour;
+            return Number(a.loginRequired) - Number(b.loginRequired);
         });
     }
 
-    /**
-     * Evaluasi apakah earning rate saat ini mencukupi target $1.25/jam.
-     * Dipanggil oleh MCP evaluate_strategy.
-     */
+    /** Evaluasi apakah perlu ganti strategi berdasarkan rate saat ini. */
     evaluateProgress(totalEarned, elapsedMinutes) {
-        const TARGET_PER_HOUR = 1.25; // $10 / 8 jam
-        const SESSION_DURATION_HOURS = 8;
-        const TARGET_TOTAL = 10.0;
-
-        const elapsedHours = elapsedMinutes / 60;
-        const currentRate = elapsedHours > 0 ? totalEarned / elapsedHours : 0;
-        const projectedTotal = currentRate * SESSION_DURATION_HOURS;
-        const remainingTarget = TARGET_TOTAL - totalEarned;
-        const remainingHours = SESSION_DURATION_HOURS - elapsedHours;
-
-        const onTrack = currentRate >= TARGET_PER_HOUR;
-        const needStrategySwitch = !onTrack && elapsedMinutes >= 30; // Evaluasi setelah 30 menit
+        const elapsedHours   = elapsedMinutes / 60;
+        const currentRate    = elapsedHours > 0 ? totalEarned / elapsedHours : 0;
+        const projectedTotal = currentRate * this.SESSION_HOURS;
+        const onTrack        = currentRate >= this.TARGET_PER_HOUR;
+        const needSwitch     = !onTrack && elapsedMinutes >= 30;
 
         return {
-            totalEarned: totalEarned.toFixed(2),
-            elapsedHours: elapsedHours.toFixed(2),
-            currentRatePerHour: currentRate.toFixed(2),
-            targetRatePerHour: TARGET_PER_HOUR.toFixed(2),
-            projectedTotal: projectedTotal.toFixed(2),
-            targetTotal: TARGET_TOTAL.toFixed(2),
-            remainingTarget: remainingTarget.toFixed(2),
-            remainingHours: remainingHours.toFixed(2),
+            totalEarned:      totalEarned.toFixed(2),
+            currentRate:      currentRate.toFixed(2),
+            targetRate:       this.TARGET_PER_HOUR.toFixed(2),
+            projectedTotal:   projectedTotal.toFixed(2),
             onTrack,
-            needStrategySwitch,
-            recommendation: needStrategySwitch
-                ? `⚠ Rate $${currentRate.toFixed(2)}/jam KURANG dari target $${TARGET_PER_HOUR}/jam. GANTI STRATEGI: Coba DataAnnotation.tech atau Outlier AI yang bayarnya $15-20/jam.`
-                : `✅ On track! Rate $${currentRate.toFixed(2)}/jam. Proyeksi: $${projectedTotal.toFixed(2)} dalam 8 jam.`,
+            needSwitch,
+            message: needSwitch
+                ? `⚠ $${currentRate.toFixed(2)}/jam < target $${this.TARGET_PER_HOUR}/jam. GANTI KE DataAnnotation.tech atau Outlier AI.`
+                : onTrack
+                    ? `✅ On track. Proyeksi: $${projectedTotal.toFixed(2)}`
+                    : `Masih awal — evaluasi lagi setelah 30 menit.`,
         };
     }
 
-    /** Dapatkan nama semua platform yang tersedia. */
-    getAllPlatformNames() {
-        const all = [
-            ...this.platforms.tier1,
-            ...this.platforms.tier2,
-            ...this.platforms.tier3,
-        ];
-        return all.map(p => ({ name: p.name, url: p.url, tier: p.avgPayPerHour ? 1 : 2 }));
+    /** Return ringkasan semua platform (nama + URL + $/jam + $0 modal). */
+    getPlatformSummary() {
+        return this.allPlatforms.map(p => ({
+            name:    p.name,
+            url:     p.url,
+            payHour: p.avgPayPerHour || '~2-3',
+            cost:    '$0',
+            login:   p.loginRequired ? 'Butuh login user' : 'Daftar sendiri',
+        }));
     }
 }
 
