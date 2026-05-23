@@ -1,5 +1,5 @@
 /**
- * mcp_server.js v4.0
+ * mcp_server.js v5.0
  * ==================
  * MCP Server — Hermes Agent ↔ Node.js bridge.
  *
@@ -9,9 +9,15 @@
  *   get_earnings        — Laporan sesi: rate, on-track, rekomendasi
  *   evaluate_strategy   — Evaluasi apakah perlu ganti platform
  *   log_strategy_switch — Catat perpindahan platform
- *   setup_platforms     — Daftar ke semua platform $0 modal via CloakBrowser
+ *   setup_platforms     — Daftar ke semua platform $0 modal
+ *   check_user_signals  — Cek sinyal/perintah dari user (backup bridge)
  *   send_telegram_update— Kirim notif ke Telegram
  *   ensure_browser      — Pastikan CloakBrowser aktif
+ *
+ * CATATAN: Hermes v7+ berjalan dalam GATEWAY MODE.
+ * Pesan Telegram user diterima langsung oleh Hermes (busy_input_mode: steer).
+ * Tool check_user_signals ini sebagai BACKUP untuk membaca sinyal file-based
+ * jika gateway belum dikonfigurasi.
  */
 
 'use strict';
@@ -22,6 +28,8 @@ const {
     CallToolRequestSchema,
     ListToolsRequestSchema,
 }                              = require('@modelcontextprotocol/sdk/types.js');
+const path = require('path');
+const fs   = require('fs');
 
 const taskDiscovery    = require('./taskDiscovery.js');
 const earningsTracker  = require('./earningsTracker.js');
@@ -29,8 +37,10 @@ const telegramNotifier = require('./telegramNotifier.js');
 const browserWatchdog  = require('./browserWatchdog.js');
 const platformSetup    = require('./platformSetup.js');
 
+const SIGNALS_DIR = path.join(__dirname, '..', '9router-data', 'signals');
+
 const server = new Server(
-    { name: 'money-agent-mcp', version: '4.0.0' },
+    { name: 'money-agent-mcp', version: '5.0.0' },
     { capabilities: { tools: {} } }
 );
 
@@ -40,43 +50,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         {
             name: 'discover_tasks',
             description:
-                'Scan semua platform freelance dan microtask yang bisa dikerjakan AI secara otonom ' +
-                '(tanpa telepon, tanpa VC, $0 modal). ' +
-                'Return daftar peluang diurutkan $/jam tertinggi. ' +
-                'Panggil ini di awal sesi dan setiap ganti strategi.',
+                'Scan semua platform $0 modal yang bisa dikerjakan AI otonom (tanpa telepon/VC). ' +
+                'Return peluang diranking $/jam. Panggil di awal sesi dan setiap ganti strategi.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
         {
             name: 'complete_task',
-            description: 'Catat task yang selesai dan payout-nya. Wajib dipanggil setiap task selesai.',
+            description: 'Catat task selesai dan payout-nya. Wajib dipanggil setiap task selesai.',
             inputSchema: {
                 type: 'object',
                 properties: {
-                    platform: { type: 'string', description: 'Nama platform' },
-                    taskId:   { type: 'string', description: 'ID atau deskripsi singkat task' },
-                    payout:   { type: 'number', description: 'Nilai payout dalam USD' },
-                    taskType: { type: 'string', description: 'Tipe task (misal: rlhf_rating, article_writing)' },
+                    platform: { type: 'string' },
+                    taskId:   { type: 'string' },
+                    payout:   { type: 'number', description: 'Payout dalam USD' },
+                    taskType: { type: 'string' },
                 },
                 required: ['platform', 'taskId', 'payout'],
             },
         },
         {
             name: 'get_earnings',
-            description:
-                'Laporan sesi: total earned, rate $/jam, on-track menuju $10, proyeksi, rekomendasi. ' +
-                'Panggil setiap 30 menit.',
+            description: 'Laporan sesi: total earned, rate $/jam, on-track, proyeksi, rekomendasi. Panggil setiap 30 menit.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
         {
             name: 'evaluate_strategy',
             description:
                 'Evaluasi apakah strategi saat ini cukup untuk $10/8jam. ' +
-                'Jika tidak on-track setelah 30 menit, rekomendasikan platform yang lebih bayar. ' +
-                'Return: perlu ganti atau tidak + platform alternatif.',
+                'Jika tidak on-track setelah 30 menit, rekomendasikan platform baru yang lebih bayar.',
             inputSchema: {
                 type: 'object',
                 properties: {
-                    current_platform: { type: 'string', description: 'Platform yang sedang digunakan' },
+                    current_platform: { type: 'string' },
                 },
                 required: ['current_platform'],
             },
@@ -98,35 +103,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             name: 'setup_platforms',
             description:
                 'Daftar otomatis ke semua platform $0 modal via CloakBrowser. ' +
-                'Urutan: DataAnnotation.tech → Outlier AI → Toloka → Remotasks → Textbroker. ' +
-                'Panggil ini SEKALI di awal jika akun belum ada. ' +
-                'Untuk Toloka (butuh Google login), notifikasi dikirim ke user via Telegram.',
+                'Panggil SEKALI di awal jika akun belum ada.',
             inputSchema: {
                 type: 'object',
                 properties: {
-                    email:    { type: 'string', description: 'Email untuk registrasi semua platform' },
-                    password: { type: 'string', description: 'Password yang akan digunakan' },
+                    email:    { type: 'string' },
+                    password: { type: 'string' },
                 },
                 required: ['email', 'password'],
             },
         },
         {
+            name: 'check_user_signals',
+            description:
+                'Cek apakah ada sinyal/perintah baru dari user yang belum diproses.\n' +
+                'CATATAN: Dalam Gateway Mode, perintah user datang langsung via Telegram.\n' +
+                'Tool ini membaca FILE SINYAL sebagai backup jika ada perintah yang terlewat.\n' +
+                'Return: daftar sinyal pending (platform_ready, pause, switch, dll).\n' +
+                'Panggil ini jika kamu belum menerima update dari user dalam 15 menit.',
+            inputSchema: { type: 'object', properties: {}, required: [] },
+        },
+        {
             name: 'send_telegram_update',
-            description: 'Kirim notifikasi progress atau permintaan bantuan ke user via Telegram.',
+            description: 'Kirim notifikasi atau laporan ke user via Telegram.',
             inputSchema: {
                 type: 'object',
-                properties: {
-                    message: { type: 'string' },
-                },
+                properties: { message: { type: 'string' } },
                 required: ['message'],
             },
         },
         {
             name: 'ensure_browser',
             description:
-                'WAJIB dipanggil sebelum membuka website apapun. ' +
-                'Memastikan CloakBrowser (stealth, anti-bot) berjalan dan siap. ' +
-                'Return: CDP URL untuk koneksi Playwright.',
+                'WAJIB sebelum membuka website apapun. ' +
+                'Pastikan CloakBrowser (stealth, anti-bot) berjalan. ' +
+                'Return CDP URL untuk koneksi Playwright.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
     ],
@@ -138,24 +149,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // ── discover_tasks ───────────────────────────────────────────────────────
     if (name === 'discover_tasks') {
-        const opportunities = await taskDiscovery.discoverTasks();
-        const top = opportunities.slice(0, 8);
+        const opps = await taskDiscovery.discoverTasks();
+        const top  = opps.slice(0, 8);
         const rows = top.map((t, i) =>
-            `${i + 1}. [${t.platform}] ${t.title}\n` +
-            `   $/jam: ~$${t.estimatedPayPerHour} | Tier: ${t.tier} | Biaya join: $${t.costToJoin}\n` +
+            `${i + 1}. [${t.platform}] — $${t.estimatedPayPerHour}/jam\n` +
             `   URL: ${t.url}\n` +
-            `   Cara mulai: ${t.howToStart || '-'}\n` +
-            `   Withdrawal: ${t.withdrawal || '-'}`
+            `   Biaya join: $${t.costToJoin} (GRATIS)\n` +
+            `   Withdrawal: ${t.withdrawal || '-'}\n` +
+            `   Cara mulai: ${t.howToStart || '-'}`
         ).join('\n\n');
 
         return {
             content: [{
                 type: 'text',
                 text:
-                    `=== PLATFORM $0 MODAL — DIRANKING $/JAM ===\n\n${rows}\n\n` +
-                    `SEMUA platform di atas GRATIS untuk bergabung.\n` +
-                    `REKOMENDASI: Mulai DataAnnotation.tech ($15/jam) atau Outlier AI ($20/jam).\n` +
-                    `JSON lengkap:\n${JSON.stringify(opportunities, null, 2)}`,
+                    `=== PLATFORM $0 MODAL — RANKED $/JAM ===\n\n${rows}\n\n` +
+                    `SEMUA platform GRATIS untuk bergabung.\n` +
+                    `REKOMENDASI: DataAnnotation.tech ($15/jam) atau Outlier AI ($20/jam).\n\n` +
+                    `JSON lengkap:\n${JSON.stringify(opps, null, 2)}`,
             }],
         };
     }
@@ -182,9 +193,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === 'get_earnings') {
         const report = await earningsTracker.getSessionReport();
         const byPlatform = report.earningsByPlatform
-            .map(r => `  ${r.platform}: $${r.total_payout?.toFixed(2)} (${r.task_count} tasks)`)
+            .map(r => `  ${r.platform}: $${r.total_payout?.toFixed(2)} (${r.task_count} task)`)
             .join('\n') || '  (belum ada data)';
-
         return {
             content: [{
                 type: 'text',
@@ -209,22 +219,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (report.needStrategySwitch) {
             const alts = [
-                { name: 'DataAnnotation.tech', url: 'https://www.dataannotation.tech', pay: 15, why: 'RLHF rating, review kode AI — cocok sempurna' },
-                { name: 'Outlier AI',          url: 'https://outlier.ai',              pay: 20, why: 'AI trainer — bayar tertinggi' },
-                { name: 'Textbroker',          url: 'https://www.textbroker.com',      pay: 4,  why: 'OpenOrder artikel — langsung bisa ambil' },
-                { name: 'Scale AI',            url: 'https://scale.com/ai-tasker',     pay: 2.5, why: 'RLHF tasks — volume besar' },
+                { name: 'DataAnnotation.tech', url: 'https://www.dataannotation.tech', pay: 15 },
+                { name: 'Outlier AI',          url: 'https://outlier.ai',              pay: 20 },
+                { name: 'Textbroker',          url: 'https://www.textbroker.com',      pay: 4  },
+                { name: 'Scale AI',            url: 'https://scale.com/ai-tasker',     pay: 2.5 },
             ].filter(a => a.name !== current_platform);
 
-            const top = alts[0];
             advice =
-                `❌ GANTI STRATEGI!\n` +
-                `${current_platform} terlalu lambat untuk target $10.\n\n` +
-                `PINDAH KE: ${top.name}\n` +
-                `URL: ${top.url}\n` +
-                `Potensi: $${top.pay}/jam\n` +
-                `Kenapa: ${top.why}\n\n` +
-                `Alternatif lain:\n` +
-                alts.slice(1, 3).map(a => `  • ${a.name} ($${a.pay}/jam) — ${a.why}`).join('\n');
+                `❌ GANTI PLATFORM!\n${current_platform} terlalu lambat.\n\n` +
+                `PINDAH KE: ${alts[0].name} — $${alts[0].pay}/jam\n` +
+                `URL: ${alts[0].url}\n\n` +
+                `Alternatif:\n` +
+                alts.slice(1, 3).map(a => `  • ${a.name} ($${a.pay}/jam)`).join('\n');
         } else {
             advice =
                 `✅ ${current_platform} cukup baik.\n` +
@@ -235,11 +241,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
             content: [{
                 type: 'text',
-                text:
-                    `=== EVALUASI STRATEGI ===\n` +
-                    `Platform: ${current_platform}\n` +
-                    `Earned: ${report.sessionEarned} | Rate: ${report.currentRatePerHour}/jam\n\n` +
-                    advice,
+                text: `=== EVALUASI STRATEGI ===\nPlatform: ${current_platform}\n` +
+                      `Earned: ${report.sessionEarned} | Rate: ${report.currentRatePerHour}/jam\n\n` + advice,
             }],
         };
     }
@@ -259,34 +262,81 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === 'setup_platforms') {
         const { email, password } = args;
         if (!email || !password) {
-            return {
-                content: [{ type: 'text', text: '❌ Email dan password wajib diisi untuk setup platform.' }],
-                isError: true,
-            };
+            return { content: [{ type: 'text', text: '❌ Email dan password wajib.' }], isError: true };
         }
-
-        // Cek apakah semua sudah terdaftar
-        const allReady = ['DataAnnotation.tech', 'Outlier AI', 'Remotasks', 'Textbroker']
-            .every(p => platformSetup.isRegistered(p));
-
-        if (allReady) {
-            return {
-                content: [{ type: 'text', text: '✅ Semua platform utama sudah terdaftar. Siap kerja!' }],
-            };
-        }
-
         const results = await platformSetup.runSetup(email, password);
-        const summary = Object.entries(results)
-            .map(([k, v]) => `${k}: ${v.status}`)
-            .join('\n');
+        const summary = Object.entries(results).map(([k, v]) => `${k}: ${v.status}`).join('\n');
+        return { content: [{ type: 'text', text: `=== HASIL SETUP ===\n${summary}` }] };
+    }
+
+    // ── check_user_signals ───────────────────────────────────────────────────
+    if (name === 'check_user_signals') {
+        const signals = [];
+
+        // Baca platform_accounts.json untuk platform yang baru dikonfirmasi
+        const stateFile = path.join(__dirname, '..', '9router-data', 'platform_accounts.json');
+        if (fs.existsSync(stateFile)) {
+            const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+            for (const [platform, info] of Object.entries(state.registered || {})) {
+                if (info.confirmedByUser && info.status === 'active') {
+                    const confirmedAt = new Date(info.confirmedAt || 0);
+                    const ageMinutes  = (Date.now() - confirmedAt.getTime()) / 60_000;
+                    if (ageMinutes < 60) { // Hanya 60 menit terakhir
+                        signals.push({
+                            type: 'platform_ready',
+                            platform,
+                            message: `${platform} dikonfirmasi user — mulai kerja di sana!`,
+                            confirmedAt: info.confirmedAt,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Baca file sinyal dari direktori signals/
+        if (fs.existsSync(SIGNALS_DIR)) {
+            const files = fs.readdirSync(SIGNALS_DIR).filter(f => f.endsWith('.json'));
+            for (const file of files) {
+                try {
+                    const filePath = path.join(SIGNALS_DIR, file);
+                    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                    const ageMinutes = (Date.now() - new Date(data.at || 0).getTime()) / 60_000;
+                    if (ageMinutes < 120) {
+                        signals.push({ type: data.type || 'signal', ...data, file });
+                        // Hapus setelah dibaca
+                        fs.unlinkSync(filePath);
+                    }
+                } catch (_) {}
+            }
+        }
+
+        if (signals.length === 0) {
+            return {
+                content: [{
+                    type: 'text',
+                    text:
+                        `=== SINYAL USER ===\n` +
+                        `Tidak ada sinyal baru dari user.\n\n` +
+                        `CATATAN: Dalam Gateway Mode, user berbicara langsung dengan kamu via Telegram.\n` +
+                        `Pesan masuk saat kamu bekerja akan di-inject setelah tool call berikutnya (steer mode).\n` +
+                        `Tool ini hanya untuk membaca sinyal file-based yang mungkin terlewat.`,
+                }],
+            };
+        }
+
+        const summary = signals.map(s =>
+            `[${s.type}] ${s.platform || ''} — ${s.message || JSON.stringify(s)}`
+        ).join('\n');
 
         return {
             content: [{
                 type: 'text',
                 text:
-                    `=== HASIL SETUP PLATFORM ===\n${summary}\n\n` +
-                    `Platform yang perlu verifikasi email: cek inbox ${email}.\n` +
-                    `Platform yang perlu login Google (Toloka): notifikasi sudah dikirim ke Telegram user.`,
+                    `=== SINYAL DARI USER (${signals.length} baru) ===\n\n${summary}\n\n` +
+                    `AKSI YANG DIREKOMENDASIKAN:\n` +
+                    signals.filter(s => s.type === 'platform_ready').map(s =>
+                        `→ ${s.platform} siap! Buka ${s.platform} dan mulai kerja di sana.`
+                    ).join('\n'),
             }],
         };
     }
@@ -294,30 +344,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // ── send_telegram_update ─────────────────────────────────────────────────
     if (name === 'send_telegram_update') {
         await telegramNotifier.sendAlert(args.message);
-        return { content: [{ type: 'text', text: `✅ Telegram terkirim.` }] };
+        return { content: [{ type: 'text', text: '✅ Pesan Telegram terkirim.' }] };
     }
 
     // ── ensure_browser ───────────────────────────────────────────────────────
     if (name === 'ensure_browser') {
         try {
-            const { cdpUrl, port } = await browserWatchdog.ensureRunning();
+            const { cdpUrl } = await browserWatchdog.ensureRunning();
             return {
                 content: [{
                     type: 'text',
                     text:
-                        `✅ CloakBrowser siap (stealth mode aktif).\n` +
+                        `✅ CloakBrowser siap (stealth mode).\n` +
                         `CDP URL: ${cdpUrl}\n` +
-                        `Koneksi Playwright:\n` +
-                        `  browser = chromium.connect_over_cdp("${cdpUrl}")\n` +
-                        `  page    = browser.contexts()[0].pages()[0]`,
+                        `Koneksi Playwright: chromium.connect_over_cdp("${cdpUrl}")`,
                 }],
             };
         } catch (err) {
             return {
-                content: [{
-                    type: 'text',
-                    text: `❌ CloakBrowser error: ${err.message}\nWatchdog akan retry otomatis.`,
-                }],
+                content: [{ type: 'text', text: `❌ CloakBrowser error: ${err.message}` }],
                 isError: true,
             };
         }
@@ -329,7 +374,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('[MCP] money-agent-mcp v4.0.0 siap.');
+    console.error('[MCP] money-agent-mcp v5.0.0 siap.');
 }
 
 main().catch(err => { console.error('[MCP] Fatal:', err); process.exit(1); });
