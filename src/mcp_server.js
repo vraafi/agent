@@ -1,16 +1,17 @@
 /**
- * mcp_server.js v3.0
+ * mcp_server.js v4.0
  * ==================
- * MCP Server — jembatan Node.js ↔ Hermes Agent (Python).
+ * MCP Server — Hermes Agent ↔ Node.js bridge.
  *
  * Tools:
- *   discover_tasks      — Scan semua platform, return peluang diranking $/jam
+ *   discover_tasks      — Scan platform, return peluang ranked $/jam
  *   complete_task       — Catat task selesai + cek milestone
- *   get_earnings        — Laporan lengkap sesi: rate, on-track, rekomendasi
- *   evaluate_strategy   — Evaluasi apakah perlu ganti platform/strategi
+ *   get_earnings        — Laporan sesi: rate, on-track, rekomendasi
+ *   evaluate_strategy   — Evaluasi apakah perlu ganti platform
  *   log_strategy_switch — Catat perpindahan platform
+ *   setup_platforms     — Daftar ke semua platform $0 modal via CloakBrowser
  *   send_telegram_update— Kirim notif ke Telegram
- *   ensure_browser      — Pastikan CloakBrowser aktif, return CDP URL
+ *   ensure_browser      — Pastikan CloakBrowser aktif
  */
 
 'use strict';
@@ -26,9 +27,10 @@ const taskDiscovery    = require('./taskDiscovery.js');
 const earningsTracker  = require('./earningsTracker.js');
 const telegramNotifier = require('./telegramNotifier.js');
 const browserWatchdog  = require('./browserWatchdog.js');
+const platformSetup    = require('./platformSetup.js');
 
 const server = new Server(
-    { name: 'money-agent-mcp', version: '3.0.0' },
+    { name: 'money-agent-mcp', version: '4.0.0' },
     { capabilities: { tools: {} } }
 );
 
@@ -38,24 +40,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         {
             name: 'discover_tasks',
             description:
-                'Scan semua platform freelance dan microtask yang 100% bisa dikerjakan AI secara otonom ' +
-                '(tanpa telepon, tanpa video call). ' +
-                'Return daftar peluang diurutkan dari $/jam tertinggi. ' +
-                'Panggil ini di awal sesi dan setiap kali perlu ganti strategi.',
+                'Scan semua platform freelance dan microtask yang bisa dikerjakan AI secara otonom ' +
+                '(tanpa telepon, tanpa VC, $0 modal). ' +
+                'Return daftar peluang diurutkan $/jam tertinggi. ' +
+                'Panggil ini di awal sesi dan setiap ganti strategi.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
         {
             name: 'complete_task',
-            description:
-                'Catat satu task yang sudah diselesaikan dan payout-nya. ' +
-                'Wajib dipanggil setiap kali berhasil menyelesaikan pekerjaan apapun.',
+            description: 'Catat task yang selesai dan payout-nya. Wajib dipanggil setiap task selesai.',
             inputSchema: {
                 type: 'object',
                 properties: {
-                    platform: { type: 'string', description: 'Nama platform (contoh: Toloka, DataAnnotation.tech, Fastwork.id)' },
-                    taskId:   { type: 'string', description: 'ID atau deskripsi singkat task yang diselesaikan' },
+                    platform: { type: 'string', description: 'Nama platform' },
+                    taskId:   { type: 'string', description: 'ID atau deskripsi singkat task' },
                     payout:   { type: 'number', description: 'Nilai payout dalam USD' },
-                    taskType: { type: 'string', description: 'Tipe task (contoh: image_classification, article_writing, rlhf_rating)' },
+                    taskType: { type: 'string', description: 'Tipe task (misal: rlhf_rating, article_writing)' },
                 },
                 required: ['platform', 'taskId', 'payout'],
             },
@@ -63,46 +63,60 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         {
             name: 'get_earnings',
             description:
-                'Laporan lengkap sesi: total earned, earning rate ($/jam), ' +
-                'apakah on-track menuju $10, proyeksi total, dan rekomendasi strategi. ' +
-                'Panggil ini setiap 30 menit untuk evaluasi progress.',
+                'Laporan sesi: total earned, rate $/jam, on-track menuju $10, proyeksi, rekomendasi. ' +
+                'Panggil setiap 30 menit.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
         {
             name: 'evaluate_strategy',
             description:
-                'Evaluasi apakah strategi saat ini cukup untuk mencapai target $10/8jam. ' +
-                'Jika tidak on-track setelah 30 menit, tool ini akan merekomendasikan platform baru ' +
-                'yang bayarnya lebih tinggi (DataAnnotation.tech $15/jam, Outlier AI $20/jam). ' +
-                'Return: apakah perlu ganti strategi + platform yang disarankan.',
+                'Evaluasi apakah strategi saat ini cukup untuk $10/8jam. ' +
+                'Jika tidak on-track setelah 30 menit, rekomendasikan platform yang lebih bayar. ' +
+                'Return: perlu ganti atau tidak + platform alternatif.',
             inputSchema: {
                 type: 'object',
                 properties: {
-                    current_platform: { type: 'string', description: 'Platform yang sedang digunakan saat ini' },
+                    current_platform: { type: 'string', description: 'Platform yang sedang digunakan' },
                 },
                 required: ['current_platform'],
             },
         },
         {
             name: 'log_strategy_switch',
-            description: 'Catat pergantian platform/strategi beserta alasannya untuk tracking.',
+            description: 'Catat perpindahan platform beserta alasannya.',
             inputSchema: {
                 type: 'object',
                 properties: {
                     from_platform: { type: 'string' },
                     to_platform:   { type: 'string' },
-                    reason:        { type: 'string', description: 'Alasan ganti platform (contoh: rate terlalu rendah, task habis)' },
+                    reason:        { type: 'string' },
                 },
                 required: ['from_platform', 'to_platform', 'reason'],
             },
         },
         {
-            name: 'send_telegram_update',
-            description: 'Kirim notifikasi progress ke pengguna via Telegram.',
+            name: 'setup_platforms',
+            description:
+                'Daftar otomatis ke semua platform $0 modal via CloakBrowser. ' +
+                'Urutan: DataAnnotation.tech → Outlier AI → Toloka → Remotasks → Textbroker. ' +
+                'Panggil ini SEKALI di awal jika akun belum ada. ' +
+                'Untuk Toloka (butuh Google login), notifikasi dikirim ke user via Telegram.',
             inputSchema: {
                 type: 'object',
                 properties: {
-                    message: { type: 'string', description: 'Pesan yang akan dikirim' },
+                    email:    { type: 'string', description: 'Email untuk registrasi semua platform' },
+                    password: { type: 'string', description: 'Password yang akan digunakan' },
+                },
+                required: ['email', 'password'],
+            },
+        },
+        {
+            name: 'send_telegram_update',
+            description: 'Kirim notifikasi progress atau permintaan bantuan ke user via Telegram.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    message: { type: 'string' },
                 },
                 required: ['message'],
             },
@@ -110,10 +124,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         {
             name: 'ensure_browser',
             description:
-                'WAJIB dipanggil sebelum membuka website atau menggunakan browser. ' +
-                'Memastikan CloakBrowser (Chrome stealth, anti-bot-detection) sudah berjalan. ' +
-                'CloakBrowser akan otomatis restart jika tertutup — tidak akan pernah mati permanen. ' +
-                'Return: CDP URL untuk koneksi Playwright ke browser.',
+                'WAJIB dipanggil sebelum membuka website apapun. ' +
+                'Memastikan CloakBrowser (stealth, anti-bot) berjalan dan siap. ' +
+                'Return: CDP URL untuk koneksi Playwright.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
     ],
@@ -126,24 +139,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // ── discover_tasks ───────────────────────────────────────────────────────
     if (name === 'discover_tasks') {
         const opportunities = await taskDiscovery.discoverTasks();
-        const top5 = opportunities.slice(0, 5);
-        const summary = top5.map((t, i) =>
+        const top = opportunities.slice(0, 8);
+        const rows = top.map((t, i) =>
             `${i + 1}. [${t.platform}] ${t.title}\n` +
-            `   $/jam: ~$${t.estimatedPayPerHour} | Tier: ${t.tier} | Login: ${t.loginRequired ? 'Ya (user bantu)' : 'Tidak'}\n` +
+            `   $/jam: ~$${t.estimatedPayPerHour} | Tier: ${t.tier} | Biaya join: $${t.costToJoin}\n` +
             `   URL: ${t.url}\n` +
-            `   Catatan: ${t.notes}`
+            `   Cara mulai: ${t.howToStart || '-'}\n` +
+            `   Withdrawal: ${t.withdrawal || '-'}`
         ).join('\n\n');
 
         return {
             content: [{
                 type: 'text',
                 text:
-                    `=== PELUANG PENGHASILAN OTONOM (Top ${top5.length}) ===\n\n` +
-                    summary +
-                    `\n\n--- Total ${opportunities.length} platform tersedia ---\n` +
-                    `REKOMENDASI UTAMA: Mulai dari DataAnnotation.tech ($15/jam) atau ` +
-                    `Outlier AI ($20/jam) untuk mencapai target $10/8jam paling cepat.\n` +
-                    `Data JSON lengkap:\n${JSON.stringify(opportunities, null, 2)}`,
+                    `=== PLATFORM $0 MODAL — DIRANKING $/JAM ===\n\n${rows}\n\n` +
+                    `SEMUA platform di atas GRATIS untuk bergabung.\n` +
+                    `REKOMENDASI: Mulai DataAnnotation.tech ($15/jam) atau Outlier AI ($20/jam).\n` +
+                    `JSON lengkap:\n${JSON.stringify(opportunities, null, 2)}`,
             }],
         };
     }
@@ -160,7 +172,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     `✅ Task selesai: +$${payout} dari ${platform}\n` +
                     `📊 Sesi: ${report.sessionEarned} / ${report.sessionTarget}\n` +
                     `⚡ Rate: ${report.currentRatePerHour}/jam (target: ${report.targetRatePerHour})\n` +
-                    `${report.statusIcon} ${report.onTrack ? 'ON TRACK' : 'PERLU PERCEPATAN'}\n` +
+                    `${report.statusIcon} ${report.onTrack ? 'ON TRACK ✅' : 'PERLU PERCEPATAN ⚠'}\n` +
                     `💡 ${report.recommendation}`,
             }],
         };
@@ -193,37 +205,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === 'evaluate_strategy') {
         const { current_platform } = args;
         const report = await earningsTracker.getSessionReport();
-
         let advice = '';
-        let switchRecommendation = null;
 
         if (report.needStrategySwitch) {
-            const alternatives = [
-                { name: 'DataAnnotation.tech', url: 'https://www.dataannotation.tech', payPerHour: 15, reason: 'RLHF rating, code review — AI sangat cocok' },
-                { name: 'Outlier AI',          url: 'https://outlier.ai',              payPerHour: 20, reason: 'AI trainer tasks — bayar tertinggi' },
-                { name: 'Textbroker',           url: 'https://www.textbroker.com',       payPerHour: 4,  reason: 'Artikel OpenOrder — langsung kerjakan tanpa apply' },
-                { name: 'Scale AI',             url: 'https://scale.com/ai-tasker',      payPerHour: 2.5, reason: 'RLHF tasks — volume besar' },
-                { name: 'Remotasks',            url: 'https://www.remotasks.com',         payPerHour: 2,  reason: 'Annotation task — stabil' },
+            const alts = [
+                { name: 'DataAnnotation.tech', url: 'https://www.dataannotation.tech', pay: 15, why: 'RLHF rating, review kode AI — cocok sempurna' },
+                { name: 'Outlier AI',          url: 'https://outlier.ai',              pay: 20, why: 'AI trainer — bayar tertinggi' },
+                { name: 'Textbroker',          url: 'https://www.textbroker.com',      pay: 4,  why: 'OpenOrder artikel — langsung bisa ambil' },
+                { name: 'Scale AI',            url: 'https://scale.com/ai-tasker',     pay: 2.5, why: 'RLHF tasks — volume besar' },
             ].filter(a => a.name !== current_platform);
 
-            switchRecommendation = alternatives[0];
+            const top = alts[0];
             advice =
-                `❌ GANTI STRATEGI DIPERLUKAN!\n` +
-                `Platform saat ini (${current_platform}) terlalu lambat.\n\n` +
-                `REKOMENDASI PINDAH KE: ${switchRecommendation.name}\n` +
-                `URL: ${switchRecommendation.url}\n` +
-                `Potensi: $${switchRecommendation.payPerHour}/jam\n` +
-                `Kenapa: ${switchRecommendation.reason}\n\n` +
+                `❌ GANTI STRATEGI!\n` +
+                `${current_platform} terlalu lambat untuk target $10.\n\n` +
+                `PINDAH KE: ${top.name}\n` +
+                `URL: ${top.url}\n` +
+                `Potensi: $${top.pay}/jam\n` +
+                `Kenapa: ${top.why}\n\n` +
                 `Alternatif lain:\n` +
-                alternatives.slice(1).map(a =>
-                    `  • ${a.name} ($${a.payPerHour}/jam) — ${a.reason}`
-                ).join('\n');
+                alts.slice(1, 3).map(a => `  • ${a.name} ($${a.pay}/jam) — ${a.why}`).join('\n');
         } else {
             advice =
-                `✅ Strategi saat ini (${current_platform}) cukup baik.\n` +
-                `Rate: ${report.currentRatePerHour}/jam\n` +
-                `Proyeksi: ${report.projectedTotal} dalam 8 jam.\n` +
-                `Tetap lanjutkan — evaluasi lagi dalam 30 menit.`;
+                `✅ ${current_platform} cukup baik.\n` +
+                `Rate: ${report.currentRatePerHour}/jam | Proyeksi: ${report.projectedTotal}\n` +
+                `Lanjutkan — evaluasi lagi dalam 30 menit.`;
         }
 
         return {
@@ -231,7 +237,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 type: 'text',
                 text:
                     `=== EVALUASI STRATEGI ===\n` +
-                    `Platform aktif: ${current_platform}\n` +
+                    `Platform: ${current_platform}\n` +
                     `Earned: ${report.sessionEarned} | Rate: ${report.currentRatePerHour}/jam\n\n` +
                     advice,
             }],
@@ -240,12 +246,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // ── log_strategy_switch ──────────────────────────────────────────────────
     if (name === 'log_strategy_switch') {
-        const { from_platform, to_platform, reason } = args;
-        await earningsTracker.logStrategySwitch(from_platform, to_platform, reason);
+        await earningsTracker.logStrategySwitch(args.from_platform, args.to_platform, args.reason);
         return {
             content: [{
                 type: 'text',
-                text: `✅ Perpindahan dicatat: ${from_platform} → ${to_platform}\nAlasan: ${reason}`,
+                text: `✅ Dicatat: ${args.from_platform} → ${args.to_platform}\nAlasan: ${args.reason}`,
+            }],
+        };
+    }
+
+    // ── setup_platforms ──────────────────────────────────────────────────────
+    if (name === 'setup_platforms') {
+        const { email, password } = args;
+        if (!email || !password) {
+            return {
+                content: [{ type: 'text', text: '❌ Email dan password wajib diisi untuk setup platform.' }],
+                isError: true,
+            };
+        }
+
+        // Cek apakah semua sudah terdaftar
+        const allReady = ['DataAnnotation.tech', 'Outlier AI', 'Remotasks', 'Textbroker']
+            .every(p => platformSetup.isRegistered(p));
+
+        if (allReady) {
+            return {
+                content: [{ type: 'text', text: '✅ Semua platform utama sudah terdaftar. Siap kerja!' }],
+            };
+        }
+
+        const results = await platformSetup.runSetup(email, password);
+        const summary = Object.entries(results)
+            .map(([k, v]) => `${k}: ${v.status}`)
+            .join('\n');
+
+        return {
+            content: [{
+                type: 'text',
+                text:
+                    `=== HASIL SETUP PLATFORM ===\n${summary}\n\n` +
+                    `Platform yang perlu verifikasi email: cek inbox ${email}.\n` +
+                    `Platform yang perlu login Google (Toloka): notifikasi sudah dikirim ke Telegram user.`,
             }],
         };
     }
@@ -253,7 +294,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // ── send_telegram_update ─────────────────────────────────────────────────
     if (name === 'send_telegram_update') {
         await telegramNotifier.sendAlert(args.message);
-        return { content: [{ type: 'text', text: `Telegram terkirim: ${args.message}` }] };
+        return { content: [{ type: 'text', text: `✅ Telegram terkirim.` }] };
     }
 
     // ── ensure_browser ───────────────────────────────────────────────────────
@@ -264,40 +305,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 content: [{
                     type: 'text',
                     text:
-                        `✅ CloakBrowser siap (stealth mode, anti-bot-detection aktif).\n` +
+                        `✅ CloakBrowser siap (stealth mode aktif).\n` +
                         `CDP URL: ${cdpUrl}\n` +
-                        `Port   : ${port}\n\n` +
                         `Koneksi Playwright:\n` +
-                        `  browser = p.chromium.connect_over_cdp("${cdpUrl}")\n` +
-                        `  page    = browser.contexts[0].pages[0]\n\n` +
-                        `CATATAN: CloakBrowser menggunakan teknik stealth sehingga tidak terdeteksi\n` +
-                        `sebagai bot oleh Toloka, Remotasks, Fastwork, Fiverr, dll.`,
+                        `  browser = chromium.connect_over_cdp("${cdpUrl}")\n` +
+                        `  page    = browser.contexts()[0].pages()[0]`,
                 }],
             };
         } catch (err) {
             return {
                 content: [{
                     type: 'text',
-                    text:
-                        `❌ CloakBrowser gagal start: ${err.message}\n` +
-                        `Path: C:\\Users\\user\\.antigravity\\Nexus-DualBrain-AI\\bin\\cloak\\chrome.exe\n` +
-                        `Watchdog akan terus mencoba restart otomatis setiap 5 detik.`,
+                    text: `❌ CloakBrowser error: ${err.message}\nWatchdog akan retry otomatis.`,
                 }],
                 isError: true,
             };
         }
     }
 
-    return {
-        content: [{ type: 'text', text: `Tool tidak dikenal: ${name}` }],
-        isError: true,
-    };
+    return { content: [{ type: 'text', text: `Tool tidak dikenal: ${name}` }], isError: true };
 });
 
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('[MCP] money-agent-mcp v3.0.0 — siap melayani Hermes Agent.');
+    console.error('[MCP] money-agent-mcp v4.0.0 siap.');
 }
 
 main().catch(err => { console.error('[MCP] Fatal:', err); process.exit(1); });
