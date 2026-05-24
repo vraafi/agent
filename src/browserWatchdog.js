@@ -1,24 +1,27 @@
 /**
  * browserWatchdog.js
  * ==================
- * Menjaga CloakBrowser tetap hidup selamanya.
- * Jika browser tertutup (port 9223 tidak aktif), watchdog otomatis
- * me-restart browser via PowerShell CIM agar tetap berjalan sebagai
- * proses mandiri yang tidak tergantung pada terminal/script Python.
+ * Menjaga CloakBrowser tetap hidup.
+ *
+ * Skip otomatis jika:
+ *   - SKIP_BROWSER=true di .env
+ *   - Berjalan di Linux/WSL tanpa powershell.exe (CloakBrowser Windows-only)
+ *
+ * Untuk WSL: set CLOAK_CDP_URL=http://HOST_IP:9222 jika browser sudah jalan di Windows.
  */
 
 'use strict';
 
-const net        = require('net');
-const { exec }   = require('child_process');
-const path       = require('path');
-const fs         = require('fs');
-const { execSync } = require('child_process');
+const net            = require('net');
+const { exec }       = require('child_process');
+const path           = require('path');
+const fs             = require('fs');
+const { execSync }   = require('child_process');
 
 function getHostIP() {
     if (process.platform === 'linux') {
         try {
-            const ip = execSync("ip route | grep default | awk '{print $3}'").toString().trim();
+            const ip = execSync("ip route | grep default | awk '{print $3}'", { stdio: ['pipe','pipe','pipe'] }).toString().trim();
             if (ip) return ip;
         } catch (_) {}
         return '172.24.48.1';
@@ -28,26 +31,39 @@ function getHostIP() {
 
 const HOST_IP = getHostIP();
 
-// ── KONFIGURASI ──────────────────────────────────────────────────────────────
-const CHROME_PATH  = String(
-    process.env.CLOAK_CHROME_PATH ||
-    String.raw`C:\Users\user\.antigravity\Nexus-DualBrain-AI\bin\cloak\chrome.exe`
-);
-const PROFILE_DIR  = String(
-    process.env.CLOAK_PROFILE_DIR ||
-    String.raw`C:\Users\user\.antigravity\Nexus-DualBrain-AI\bin\cloak_profile`
-);
+const CHROME_PATH  = String(process.env.CLOAK_CHROME_PATH || String.raw`C:\Users\user\.antigravity\Nexus-DualBrain-AI\bin\cloak\chrome.exe`);
+const PROFILE_DIR  = String(process.env.CLOAK_PROFILE_DIR || String.raw`C:\Users\user\.antigravity\Nexus-DualBrain-AI\bin\cloak_profile`);
 const DEBUG_PORT   = Number(process.env.CLOAK_DEBUG_PORT || 9222);
-const CHECK_INTERVAL_MS = 5_000;   // cek setiap 5 detik
-const RESTART_COOLDOWN_MS = 8_000; // tunggu sebelum restart berikutnya
-// ─────────────────────────────────────────────────────────────────────────────
+const CHECK_INTERVAL_MS   = 5_000;
+const RESTART_COOLDOWN_MS = 8_000;
 
 let _watcherTimer    = null;
 let _lastRestartTime = 0;
 let _restartCount    = 0;
 let _isRestarting    = false;
+let _browserAvailable = false;
 
-/** Cek apakah port CDP aktif (non-blocking). */
+/** Deteksi apakah browser mode tersedia di sistem ini */
+function detectBrowserSupport() {
+    if (process.env.SKIP_BROWSER === 'true') {
+        console.log('[BrowserWatchdog] SKIP_BROWSER=true — mode tanpa browser diaktifkan.');
+        return false;
+    }
+    if (process.platform === 'linux') {
+        try {
+            execSync('which powershell.exe', { stdio: 'pipe' });
+            return true; // WSL dengan powershell.exe tersedia
+        } catch (_) {
+            console.log('[BrowserWatchdog] ⚠ powershell.exe tidak ditemukan di WSL.');
+            console.log('[BrowserWatchdog] Mode tanpa browser — agent tetap berjalan via teks.');
+            console.log('[BrowserWatchdog] Tip: Jalankan CloakBrowser manual di Windows, lalu set:');
+            console.log(`[BrowserWatchdog]   CLOAK_CDP_URL=http://${HOST_IP}:${DEBUG_PORT}`);
+            return false;
+        }
+    }
+    return true; // Windows native — ok
+}
+
 function isPortActive(port = DEBUG_PORT) {
     return new Promise(resolve => {
         const sock = new net.Socket();
@@ -60,7 +76,6 @@ function isPortActive(port = DEBUG_PORT) {
     });
 }
 
-/** Hapus lock files agar Chrome tidak loop error. */
 function clearLockFiles() {
     const locks = ['LOCK', 'SingletonLock', 'SingletonCookie', 'SingletonSocket'];
     let targetDir = PROFILE_DIR;
@@ -73,18 +88,11 @@ function clearLockFiles() {
     }
 }
 
-/** Matikan semua proses chrome yang masih jalan. */
 function killCloakProcesses() {
     const cmd = process.platform === 'linux' ? 'taskkill.exe' : 'taskkill';
-    return new Promise(resolve => {
-        exec(`${cmd} /F /IM chrome.exe`, () => resolve());
-    });
+    return new Promise(resolve => exec(`${cmd} /F /IM chrome.exe`, () => resolve()));
 }
 
-/**
- * Launch CloakBrowser sebagai proses MANDIRI via PowerShell CIM.
- * Browser tetap hidup setelah script Node.js selesai / crash.
- */
 function launchDetached() {
     const command = [
         `"${CHROME_PATH}"`,
@@ -96,25 +104,18 @@ function launchDetached() {
         `--start-maximized`,
     ].join(' ');
 
-    const ps = [
-        `Invoke-CimMethod`,
-        `-ClassName Win32_Process`,
-        `-MethodName Create`,
-        `-Arguments @{CommandLine='${command}'}`,
-    ].join(' ');
-
+    const ps  = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${command}'}`;
     const cmd = process.platform === 'linux' ? 'powershell.exe' : 'powershell';
     return new Promise((resolve, reject) => {
         exec(`${cmd} -Command "${ps}"`, (err, stdout, stderr) => {
-            if (err) { reject(new Error(stderr || err.message)); }
-            else { resolve(stdout.trim()); }
+            if (err) reject(new Error(stderr || err.message));
+            else resolve(stdout.trim());
         });
     });
 }
 
-/** Jalankan satu siklus restart lengkap. */
 async function restartBrowser() {
-    if (_isRestarting) return;
+    if (!_browserAvailable || _isRestarting) return;
     const now = Date.now();
     if (now - _lastRestartTime < RESTART_COOLDOWN_MS) return;
 
@@ -127,8 +128,6 @@ async function restartBrowser() {
         await killCloakProcesses();
         clearLockFiles();
         await launchDetached();
-
-        // Tunggu sampai port aktif (maks 15 detik)
         for (let i = 0; i < 15; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (await isPortActive()) {
@@ -138,39 +137,40 @@ async function restartBrowser() {
         }
     } catch (err) {
         console.error(`[BrowserWatchdog] Gagal restart: ${err.message}`);
-        console.error(`[BrowserWatchdog] Periksa path: ${CHROME_PATH}`);
     } finally {
         _isRestarting = false;
     }
 }
 
-/**
- * Mulai watchdog — jalankan sekali, terus hidup.
- * Langsung launch browser jika belum aktif, lalu poll setiap 5 detik.
- */
 async function start() {
-    console.log(`[BrowserWatchdog] Memulai watchdog CloakBrowser (port ${DEBUG_PORT})...`);
+    _browserAvailable = detectBrowserSupport();
 
-    // Launch segera jika belum aktif
+    if (!_browserAvailable) {
+        // Cek apakah browser sudah jalan via env CLOAK_CDP_URL
+        const externalCDP = process.env.CLOAK_CDP_URL;
+        if (externalCDP) {
+            console.log(`[BrowserWatchdog] Menggunakan browser eksternal: ${externalCDP}`);
+        }
+        return; // Lanjut tanpa browser — tidak blocking
+    }
+
+    console.log(`[BrowserWatchdog] Memulai watchdog CloakBrowser (port ${DEBUG_PORT})...`);
     if (!(await isPortActive())) {
         await restartBrowser();
     } else {
         console.log(`[BrowserWatchdog] CloakBrowser sudah aktif di port ${DEBUG_PORT}.`);
     }
 
-    // Poll berkala
     _watcherTimer = setInterval(async () => {
-        const alive = await isPortActive();
-        if (!alive) {
-            console.warn(`[BrowserWatchdog] Port ${DEBUG_PORT} tidak aktif — memulai restart...`);
+        if (!(await isPortActive())) {
+            console.warn(`[BrowserWatchdog] Port ${DEBUG_PORT} tidak aktif — restart...`);
             await restartBrowser();
         }
     }, CHECK_INTERVAL_MS);
 
-    _watcherTimer.unref(); // jangan blokir process exit jika semua task selesai
+    _watcherTimer.unref();
 }
 
-/** Hentikan watchdog (dipanggil saat graceful shutdown). */
 function stop() {
     if (_watcherTimer) {
         clearInterval(_watcherTimer);
@@ -179,14 +179,16 @@ function stop() {
     }
 }
 
-/** Pastikan browser aktif sekarang (dipanggil dari MCP server). */
 async function ensureRunning() {
-    const alive = await isPortActive();
-    if (!alive) {
-        console.log('[BrowserWatchdog] Browser tidak aktif, me-restart sekarang...');
-        await restartBrowser();
+    if (!_browserAvailable) {
+        const cdpUrl = process.env.CLOAK_CDP_URL || `http://${HOST_IP}:${DEBUG_PORT}`;
+        console.log(`[BrowserWatchdog] Mode tanpa browser — mengembalikan CDP URL: ${cdpUrl}`);
+        return { cdpUrl, port: DEBUG_PORT };
     }
+    const alive = await isPortActive();
+    if (!alive) await restartBrowser();
     return { cdpUrl: `http://${HOST_IP}:${DEBUG_PORT}`, port: DEBUG_PORT };
 }
 
-module.exports = { start, stop, ensureRunning, isPortActive, CDP_URL: `http://${HOST_IP}:${DEBUG_PORT}` };
+const CDP_URL = process.env.CLOAK_CDP_URL || `http://${HOST_IP}:${DEBUG_PORT}`;
+module.exports = { start, stop, ensureRunning, isPortActive, CDP_URL };
