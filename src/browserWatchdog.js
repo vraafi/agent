@@ -13,7 +13,7 @@
  */
 
 const net                    = require('net');
-const { exec, execFile }     = require('child_process');
+const { spawn }              = require('child_process');
 const path                   = require('path');
 const fs                     = require('fs');
 const { execSync }           = require('child_process');
@@ -94,77 +94,43 @@ function clearLockFiles() {
 }
 
 /**
- * Launch CloakBrowser menggunakan PowerShell CIM — metode yang terbukti berhasil.
- * CIM membuat proses Windows MANDIRI, terpisah dari WSL/Node.js.
+ * Launch CloakBrowser — sama persis dengan command yang user konfirmasi bekerja:
  *
- * PENTING: gunakan execFile bukan exec agar TIDAK ada shell yang mem-parse kutipan.
- * exec("powershell -Command \"...\"") gagal jika CommandLine punya tanda " di dalamnya.
- * execFile('powershell.exe', ['-Command', ps]) mengirim ps langsung tanpa shell quoting.
+ *   "/mnt/c/.../chrome.exe" \
+ *     --user-data-dir="C:\...\cloak_profile" \
+ *     --remote-debugging-port=9223 \
+ *     --remote-debugging-address=0.0.0.0 \
+ *     --disable-blink-features=AutomationControlled \
+ *     --no-sandbox --start-maximized &
+ *
+ * Node.js equivalent: spawn + detached:true + unref()
+ * detached = proses mandiri (tidak ikut mati ketika Node.js berhenti)
+ * unref()  = Node.js tidak menunggu proses ini selesai
  */
-function launchViaCIM() {
-    // Konversi path WSL → Windows (hapus /mnt/c/ → C:\)
-    const winChromePath = CHROME_PATH
-        .replace('/mnt/c/', 'C:\\')
-        .replace(/\//g, '\\');
-
-    // Bangun CommandLine — TANPA tanda kutip di sekitar executable
-    // (path tidak mengandung spasi, jadi tidak perlu quote)
-    const commandLine = [
-        winChromePath,
-        `--user-data-dir=${PROFILE_DIR}`,
-        `--remote-debugging-port=${DEBUG_PORT}`,
-        `--remote-debugging-address=0.0.0.0`,
-        `--remote-allow-origins=*`,
-        `--disable-blink-features=AutomationControlled`,
-        `--no-sandbox`,
-        `--start-maximized`,
-    ].join(' ');
-
-    // PowerShell script — pakai kutip ganda di sekitar commandLine
-    // karena tidak ada kutip ganda di dalam commandLine itu sendiri
-    const psScript = [
-        `$proc = Invoke-CimMethod -ClassName Win32_Process -MethodName Create`,
-        `-Arguments @{CommandLine="${commandLine}"}`,
-        `Write-Output "ReturnValue=$($proc.ReturnValue) ProcessId=$($proc.ProcessId)"`,
-    ].join(' ');
-
-    const psBin = process.platform === 'linux' ? 'powershell.exe' : 'powershell';
-
-    // execFile: argumen diteruskan langsung ke OS tanpa melalui shell
-    // Tidak ada risiko konflik tanda kutip
+function launchBrowser() {
     return new Promise(resolve => {
-        execFile(psBin, ['-NonInteractive', '-NoProfile', '-Command', psScript],
-            { timeout: 12_000 },
-            (err, stdout, stderr) => {
-                if (err) {
-                    console.error(`[BrowserWatchdog] PowerShell CIM error: ${err.message}`);
-                    if (stderr) console.error(`[BrowserWatchdog] stderr: ${stderr.trim()}`);
-                    resolve(false);
-                    return;
-                }
-                const out   = stdout.trim();
-                const retVal = (out.match(/ReturnValue=(\d+)/) || [])[1];
-                const pid    = (out.match(/ProcessId=(\d+)/)   || [])[1] || '?';
-                if (retVal === '0') {
-                    console.log(`[BrowserWatchdog] ✅ CloakBrowser diluncurkan via CIM (PID: ${pid})`);
-                    resolve(true);
-                } else {
-                    console.error(`[BrowserWatchdog] CIM ReturnValue=${retVal} — browser gagal start.`);
-                    console.error(`[BrowserWatchdog] stdout: ${out}`);
-                    resolve(false);
-                }
-            }
-        );
+        try {
+            const child = spawn(CHROME_PATH, [
+                `--user-data-dir=${PROFILE_DIR}`,
+                `--remote-debugging-port=${DEBUG_PORT}`,
+                `--remote-debugging-address=0.0.0.0`,
+                `--remote-allow-origins=*`,
+                `--disable-blink-features=AutomationControlled`,
+                `--no-sandbox`,
+                `--start-maximized`,
+            ], {
+                detached: true,   // proses mandiri — tidak ikut mati
+                stdio:    'ignore',
+                shell:    false,
+            });
+            child.unref(); // lepaskan dari event loop Node.js
+            console.log(`[BrowserWatchdog] ✅ CloakBrowser diluncurkan (PID: ${child.pid})`);
+            resolve(true);
+        } catch (err) {
+            console.error(`[BrowserWatchdog] spawn gagal: ${err.message}`);
+            resolve(false);
+        }
     });
-}
-
-/**
- * Cek apakah PowerShell tersedia di sistem (WSL harus punya powershell.exe).
- */
-function hasPowerShell() {
-    try { execSync('which powershell.exe', { stdio: 'pipe' }); return true; } catch (_) {}
-    try { execSync('which powershell', { stdio: 'pipe' }); return true; } catch (_) {}
-    return false;
 }
 
 async function start() {
@@ -179,18 +145,11 @@ async function start() {
         return;
     }
 
-    if (!hasPowerShell()) {
-        console.warn('[BrowserWatchdog] ⚠ powershell.exe tidak tersedia — tidak bisa launch otomatis.');
-        console.warn(`[BrowserWatchdog] Jalankan CloakBrowser manual di Windows lalu set:`);
-        console.warn(`[BrowserWatchdog]   CLOAK_CDP_URL=http://${HOST_IP}:${DEBUG_PORT} di .env`);
-        return;
-    }
-
     console.log('[BrowserWatchdog] Membersihkan lock files profil...');
     clearLockFiles();
 
-    console.log('[BrowserWatchdog] Meluncurkan CloakBrowser (PowerShell CIM)...');
-    const ok = await launchViaCIM();
+    console.log('[BrowserWatchdog] Meluncurkan CloakBrowser...');
+    const ok = await launchBrowser();
     if (!ok) {
         console.error('[BrowserWatchdog] ❌ Gagal launch — agent lanjut tanpa browser.');
         return;
