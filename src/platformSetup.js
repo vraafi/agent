@@ -74,6 +74,31 @@ class PlatformSetup {
      * Dipanggil di awal sesi oleh start.js.
      */
     async runSetup(userEmail, userPassword) {
+        // Lewati semua otomasi browser jika SKIP_BROWSER=true atau CloakBrowser tidak tersedia
+        if (process.env.SKIP_BROWSER === 'true') {
+            console.log('[PlatformSetup] ⚠ SKIP_BROWSER=true — otomasi browser dilewati.');
+            console.log('[PlatformSetup] Tip: Login manual ke platform, lalu kirim konfirmasi via Telegram.');
+            return { skipped: true, reason: 'SKIP_BROWSER=true' };
+        }
+
+        // Cek apakah CloakBrowser CDP port aktif sebelum mencoba koneksi
+        const net     = require('net');
+        const cdpPort = Number(process.env.CLOAK_DEBUG_PORT || 9223);
+        const cdpAlive = await new Promise(resolve => {
+            const sock = new net.Socket();
+            sock.setTimeout(1500);
+            sock.once('connect', () => { sock.destroy(); resolve(true); });
+            sock.once('timeout',  () => { sock.destroy(); resolve(false); });
+            sock.once('error',    () => { sock.destroy(); resolve(false); });
+            sock.connect(cdpPort, '127.0.0.1');
+        });
+
+        if (!cdpAlive) {
+            console.warn(`[PlatformSetup] ⚠ CloakBrowser tidak aktif di port ${cdpPort} — otomasi browser dilewati.`);
+            console.warn(`[PlatformSetup] Tip: Jalankan CloakBrowser dulu, atau set SKIP_BROWSER=true di .env`);
+            return { skipped: true, reason: `CDP port ${cdpPort} tidak aktif` };
+        }
+
         console.log('\n[PlatformSetup] ═══ SETUP PLATFORM ═══');
         console.log(`[PlatformSetup] Email: ${userEmail}`);
 
