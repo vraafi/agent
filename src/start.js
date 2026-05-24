@@ -191,27 +191,72 @@ async function main() {
     const hermesDir  = path.join(__dirname, '..', 'hermes-agent');
     const hermesPy   = path.join(hermesDir, '..', 'venv', 'bin', 'python');
     const hermesCli  = path.join(hermesDir, 'cli.py');
+    const hermesHome = process.env.HERMES_HOME || path.join(process.env.HOME || '', '.hermes');
+
+    // ── Patch ~/.hermes/.env sebelum spawn ────────────────────────
+    // Hermes Gateway punya config sendiri yang OVERRIDE CLI --base_url.
+    // Kita tulis langsung ke ~/.hermes/.env agar VPS router dipakai
+    // untuk SEMUA panggilan (termasuk cron job internal Hermes).
+    try {
+        if (!fs.existsSync(hermesHome)) fs.mkdirSync(hermesHome, { recursive: true });
+        const hermesEnvPath = path.join(hermesHome, '.env');
+        const routerV1      = `${NINEROUTER_URL}/v1`;
+        const tgToken       = process.env.TELEGRAM_BOT_TOKEN || '';
+        const tgChatId      = process.env.TELEGRAM_CHAT_ID   || '';
+
+        // Baca .env lama jika ada, lalu patch/tambahkan key yang dibutuhkan
+        let existing = '';
+        if (fs.existsSync(hermesEnvPath)) existing = fs.readFileSync(hermesEnvPath, 'utf8');
+
+        const patch = {
+            OPENAI_BASE_URL:           routerV1,
+            OPENAI_API_KEY:            NINEROUTER_KEY,
+            // Arahkan provider openrouter ke VPS kita (bukan openrouter.ai langsung)
+            OPENROUTER_BASE_URL:       routerV1,
+            OPENROUTER_API_KEY:        NINEROUTER_KEY,
+            GATEWAY_ALLOW_ALL_USERS:   'true',
+            ...(tgToken  ? { TELEGRAM_BOT_TOKEN:     tgToken  } : {}),
+            ...(tgChatId ? {
+                TELEGRAM_CHAT_ID:        tgChatId,
+                TELEGRAM_ALLOWED_USERS:  tgChatId,
+            } : {}),
+        };
+
+        for (const [k, v] of Object.entries(patch)) {
+            const re = new RegExp(`^${k}=.*`, 'm');
+            const line = `${k}=${v}`;
+            existing = re.test(existing) ? existing.replace(re, line) : existing + `\n${line}`;
+        }
+
+        fs.writeFileSync(hermesEnvPath, existing.trimStart());
+        console.log(`[Hermes] Config ditulis ke ${hermesEnvPath}`);
+        console.log(`[Hermes] Router: ${routerV1} | Telegram allowed: ${tgChatId || '(semua)'}`);
+    } catch (e) {
+        console.warn(`[Hermes] Gagal patch ~/.hermes/.env: ${e.message}`);
+    }
 
     const hermesProcess = spawn(hermesPy, [
         hermesCli,
         '--gateway',
         '--query', INITIAL_PROMPT,
-        '--model', 'kiro',
+        '--model', 'kr/claude-sonnet-4.5',
         '--provider', 'custom',
         '--base_url', `${NINEROUTER_URL}/v1`,
         '--api_key', NINEROUTER_KEY,
     ], {
         env: Object.assign({}, process.env, {
-            OPENAI_BASE_URL: `${NINEROUTER_URL}/v1`,
-            OPENAI_API_KEY:  NINEROUTER_KEY,
-            TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
-            TELEGRAM_CHAT_ID:   process.env.TELEGRAM_CHAT_ID   || '',
-            CLOAK_CDP_URL:      browserWatchdog.CDP_URL,
-            CLOAK_DEBUG_PORT:   '9223',
-            PLATFORM_EMAIL:     USER_EMAIL,
-            PLATFORM_PASSWORD:  USER_PASSWORD,
-            HERMES_HOME:        process.env.HERMES_HOME || path.join(process.env.HOME || '', '.hermes'),
-            HERMES_MODEL:       HERMES_MODEL,
+            OPENAI_BASE_URL:     `${NINEROUTER_URL}/v1`,
+            OPENAI_API_KEY:      NINEROUTER_KEY,
+            OPENROUTER_BASE_URL: `${NINEROUTER_URL}/v1`,
+            OPENROUTER_API_KEY:  NINEROUTER_KEY,
+            TELEGRAM_BOT_TOKEN:  process.env.TELEGRAM_BOT_TOKEN || '',
+            TELEGRAM_CHAT_ID:    process.env.TELEGRAM_CHAT_ID   || '',
+            CLOAK_CDP_URL:       browserWatchdog.CDP_URL,
+            CLOAK_DEBUG_PORT:    String(DEBUG_PORT),
+            PLATFORM_EMAIL:      USER_EMAIL,
+            PLATFORM_PASSWORD:   USER_PASSWORD,
+            HERMES_HOME:         hermesHome,
+            HERMES_MODEL:        HERMES_MODEL,
         }),
         cwd: hermesDir,
         stdio: 'pipe',
