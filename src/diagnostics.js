@@ -220,8 +220,8 @@ async function runDiagnostics() {
         if (reachable) {
             ok('Telegram network', 'api.telegram.org:443 terjangkau');
         } else {
-            err('Telegram network', 'Tidak bisa connect ke api.telegram.org:443 (ETIMEDOUT/ECONNREFUSED). Cek koneksi/firewall/proxy.');
-            errors.push('Telegram network tidak terjangkau');
+            warn('Telegram network', 'Tidak bisa connect ke api.telegram.org:443 — notifikasi Telegram tidak aktif, tapi agent tetap jalan.\n              Tip WSL: pastikan firewall Windows tidak blokir WSL, atau coba: wsl --shutdown lalu buka ulang.');
+            warns.push('Telegram network tidak terjangkau (notifikasi nonaktif)');
         }
     }
 
