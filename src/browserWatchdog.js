@@ -31,9 +31,9 @@ function getHostIP() {
 
 const HOST_IP = getHostIP();
 
-const CHROME_PATH  = String(process.env.CLOAK_CHROME_PATH || String.raw`C:\Users\user\.antigravity\Nexus-DualBrain-AI\bin\cloak\chrome.exe`);
-const PROFILE_DIR  = String(process.env.CLOAK_PROFILE_DIR || String.raw`C:\Users\user\.antigravity\Nexus-DualBrain-AI\bin\cloak_profile`);
-const DEBUG_PORT   = Number(process.env.CLOAK_DEBUG_PORT || 9222);
+const CHROME_PATH  = String(process.env.CLOAK_CHROME_PATH || '/mnt/c/Users/user/.antigravity/Nexus-DualBrain-AI/bin/cloak/chrome.exe');
+const PROFILE_DIR  = String(process.env.CLOAK_PROFILE_DIR || 'C:\\Users\\user\\.antigravity\\Nexus-DualBrain-AI\\bin\\cloak_profile');
+const DEBUG_PORT   = Number(process.env.CLOAK_DEBUG_PORT || 9223);
 const CHECK_INTERVAL_MS   = 5_000;
 const RESTART_COOLDOWN_MS = 8_000;
 
@@ -50,16 +50,18 @@ function detectBrowserSupport() {
         return false;
     }
     if (process.platform === 'linux') {
+        // Cek apakah CloakBrowser tersedia via path WSL langsung
         try {
-            execSync('which powershell.exe', { stdio: 'pipe' });
-            return true; // WSL dengan powershell.exe tersedia
-        } catch (_) {
-            console.log('[BrowserWatchdog] ⚠ powershell.exe tidak ditemukan di WSL.');
-            console.log('[BrowserWatchdog] Mode tanpa browser — agent tetap berjalan via teks.');
-            console.log('[BrowserWatchdog] Tip: Jalankan CloakBrowser manual di Windows, lalu set:');
-            console.log(`[BrowserWatchdog]   CLOAK_CDP_URL=http://${HOST_IP}:${DEBUG_PORT}`);
-            return false;
-        }
+            if (fs.existsSync(CHROME_PATH)) {
+                console.log(`[BrowserWatchdog] ✅ CloakBrowser ditemukan di: ${CHROME_PATH}`);
+                return true;
+            }
+        } catch (_) {}
+        console.log('[BrowserWatchdog] ⚠ CloakBrowser tidak ditemukan di path WSL.');
+        console.log('[BrowserWatchdog] Mode tanpa browser — agent tetap berjalan via teks.');
+        console.log('[BrowserWatchdog] Tip: Pastikan path benar atau set CLOAK_CHROME_PATH di .env');
+        console.log(`[BrowserWatchdog]   CLOAK_CDP_URL=http://${HOST_IP}:${DEBUG_PORT}`);
+        return false;
     }
     return true; // Windows native — ok
 }
@@ -94,6 +96,33 @@ function killCloakProcesses() {
 }
 
 function launchDetached() {
+    // Di Linux/WSL: jalankan langsung via path WSL (/mnt/c/...)
+    // Di Windows native: jalankan via PowerShell
+    if (process.platform === 'linux') {
+        const command = [
+            `"${CHROME_PATH}"`,
+            `--user-data-dir="${PROFILE_DIR}"`,
+            `--remote-debugging-port=${DEBUG_PORT}`,
+            `--remote-allow-origins=*`,
+            `--disable-blink-features=AutomationControlled`,
+            `--no-sandbox`,
+            `--start-maximized`,
+        ].join(' ');
+
+        return new Promise((resolve, reject) => {
+            // Kill proses chrome lama dulu, lalu launch browser baru di background
+            exec(`taskkill.exe /F /IM chrome.exe 2>/dev/null; ${command} &`, (err, stdout, stderr) => {
+                // err bisa non-null karena taskkill.exe mungkin tidak ada — abaikan
+                console.log(`[BrowserWatchdog] Launch output: ${stdout.trim() || '(detached)'}`);
+                if (stderr && !stderr.includes('taskkill') && !stderr.includes('not found')) {
+                    console.warn(`[BrowserWatchdog] Launch stderr: ${stderr.trim()}`);
+                }
+                resolve(stdout.trim());
+            });
+        });
+    }
+
+    // Windows native — pakai PowerShell
     const command = [
         `"${CHROME_PATH}"`,
         `--user-data-dir="${PROFILE_DIR}"`,
@@ -105,9 +134,8 @@ function launchDetached() {
     ].join(' ');
 
     const ps  = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${command}'}`;
-    const cmd = process.platform === 'linux' ? 'powershell.exe' : 'powershell';
     return new Promise((resolve, reject) => {
-        exec(`${cmd} -Command "${ps}"`, (err, stdout, stderr) => {
+        exec(`powershell -Command "${ps}"`, (err, stdout, stderr) => {
             if (err) reject(new Error(stderr || err.message));
             else resolve(stdout.trim());
         });
@@ -191,4 +219,4 @@ async function ensureRunning() {
 }
 
 const CDP_URL = process.env.CLOAK_CDP_URL || `http://${HOST_IP}:${DEBUG_PORT}`;
-module.exports = { start, stop, ensureRunning, isPortActive, CDP_URL };
+module.exports = { start, stop, ensureRunning, isPortActive, CDP_URL, HOST_IP, DEBUG_PORT };
