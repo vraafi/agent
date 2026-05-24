@@ -252,7 +252,7 @@ async function main() {
             TELEGRAM_BOT_TOKEN:  process.env.TELEGRAM_BOT_TOKEN || '',
             TELEGRAM_CHAT_ID:    process.env.TELEGRAM_CHAT_ID   || '',
             CLOAK_CDP_URL:       browserWatchdog.CDP_URL,
-            CLOAK_DEBUG_PORT:    String(DEBUG_PORT),
+            CLOAK_DEBUG_PORT:    String(browserWatchdog.DEBUG_PORT),
             PLATFORM_EMAIL:      USER_EMAIL,
             PLATFORM_PASSWORD:   USER_PASSWORD,
             HERMES_HOME:         hermesHome,
