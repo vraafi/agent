@@ -94,6 +94,46 @@ function clearLockFiles() {
 }
 
 /**
+ * Buat Windows port proxy agar port 9223 Windows-localhost bisa diakses dari WSL.
+ * Chrome di Windows bind ke 127.0.0.1 — tidak visible dari WSL2 secara default.
+ * netsh portproxy membuat Windows forward koneksi dari semua interface ke loopback.
+ * Referensi: https://github.com/microsoft/WSL/issues/4150#issuecomment-504209723
+ */
+function setupPortProxy() {
+    return new Promise(resolve => {
+        const cmd = `netsh.exe interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=${DEBUG_PORT} connectaddress=127.0.0.1 connectport=${DEBUG_PORT}`;
+        require('child_process').exec(cmd, { timeout: 5000 }, (err) => {
+            if (err) {
+                console.warn(`[BrowserWatchdog] Port proxy: ${err.message.split('\n')[0]}`);
+            } else {
+                console.log(`[BrowserWatchdog] Port proxy aktif: 0.0.0.0:${DEBUG_PORT} → 127.0.0.1:${DEBUG_PORT}`);
+            }
+            resolve();
+        });
+    });
+}
+
+/**
+ * Cek apakah Chrome benar-benar binding port di Windows (diagnostic).
+ * Gunakan netstat.exe dari WSL untuk melihat Windows ports.
+ */
+function checkWindowsPort() {
+    return new Promise(resolve => {
+        const { exec: _exec } = require('child_process');
+        _exec(`netstat.exe -an 2>/dev/null | grep ${DEBUG_PORT}`, { timeout: 5000 }, (err, stdout) => {
+            if (stdout && stdout.includes(String(DEBUG_PORT))) {
+                console.log(`[BrowserWatchdog] ℹ Windows netstat: port ${DEBUG_PORT} ditemukan → Chrome berjalan, masalah di WSL networking`);
+                console.log(`[BrowserWatchdog]   ${stdout.trim().split('\n')[0]}`);
+            } else {
+                console.warn(`[BrowserWatchdog] ⚠ Windows netstat: port ${DEBUG_PORT} TIDAK ditemukan → Chrome belum bind port atau crash`);
+                console.warn('[BrowserWatchdog]   Cek: apakah CloakBrowser terbuka di Windows?');
+            }
+            resolve();
+        });
+    });
+}
+
+/**
  * Launch CloakBrowser — sama persis dengan command yang user konfirmasi bekerja:
  *
  *   "/mnt/c/.../chrome.exe" \
@@ -151,27 +191,39 @@ async function start() {
     console.log('[BrowserWatchdog] Meluncurkan CloakBrowser...');
     const ok = await launchBrowser();
     if (!ok) {
-        console.error('[BrowserWatchdog] ❌ Gagal launch — agent lanjut tanpa browser.');
+        console.error('[BrowserWatchdog] ❌ Gagal spawn — agent lanjut tanpa browser.');
         return;
     }
 
-    // Tunggu browser siap — maks 20 detik
-    console.log('[BrowserWatchdog] Menunggu CloakBrowser siap...');
-    for (let i = 0; i < 20; i++) {
+    // Beri Chrome 3 detik untuk bind port ke Windows 127.0.0.1
+    await new Promise(r => setTimeout(r, 3000));
+
+    // ── Windows Port Proxy ─────────────────────────────────────────
+    // Chrome di Windows bind ke 127.0.0.1:9223 (Windows-only).
+    // Dari WSL2, kita tidak bisa langsung akses 127.0.0.1 Windows.
+    // Solusi: netsh portproxy — buat Windows forward HOST_IP:9223 → 127.0.0.1:9223.
+    // Setelah ini, dari WSL: HOST_IP:9223 bisa diakses.
+    await setupPortProxy();
+
+    // Tunggu browser siap — maks 25 detik, cek setiap detik
+    console.log('[BrowserWatchdog] Menunggu CloakBrowser siap di port ' + DEBUG_PORT + '...');
+    for (let i = 0; i < 25; i++) {
         await new Promise(r => setTimeout(r, 1000));
         if (await isPortActive()) {
             console.log(`[BrowserWatchdog] ✅ CloakBrowser aktif di port ${DEBUG_PORT}!`);
             _launched = true;
             return;
         }
-        if (i === 9) console.log('[BrowserWatchdog] Masih menunggu browser...');
+        if (i === 7) {
+            // Cek apakah Chrome benar-benar binding port di Windows
+            await checkWindowsPort();
+        }
     }
-    console.warn(`[BrowserWatchdog] ⚠ Port ${DEBUG_PORT} belum aktif setelah 20 detik.`);
-    console.warn('[BrowserWatchdog] Kemungkinan penyebab:');
-    console.warn('  1. Profile dir salah atau terkunci');
-    console.warn('  2. Firewall Windows blokir port 9223');
-    console.warn('  3. CloakBrowser crash saat startup');
-    console.warn('[BrowserWatchdog] Agent tetap lanjut — browser bisa disambung nanti.');
+    console.warn(`[BrowserWatchdog] ⚠ Port ${DEBUG_PORT} tidak terjangkau dari WSL setelah 25 detik.`);
+    console.warn('[BrowserWatchdog] Chrome mungkin berjalan tapi port tidak accessible dari WSL.');
+    console.warn('[BrowserWatchdog] Solusi manual: buka CloakBrowser dari Windows, lalu set di .env:');
+    console.warn(`[BrowserWatchdog]   CLOAK_CDP_URL=http://${HOST_IP}:${DEBUG_PORT}`);
+    console.warn('[BrowserWatchdog] Agent tetap lanjut — Hermes akan coba konek ke browser.');
 }
 
 function stop() {}
