@@ -1,19 +1,19 @@
+'use strict';
+
 /**
  * browserWatchdog.js
  * ==================
- * Menjaga CloakBrowser tetap hidup.
+ * Buka CloakBrowser SEKALI saja saat startup, lalu biarkan berjalan selamanya.
  *
- * Skip otomatis jika:
- *   - SKIP_BROWSER=true di .env
- *   - Berjalan di Linux/WSL tanpa powershell.exe (CloakBrowser Windows-only)
- *
- * Untuk WSL: set CLOAK_CDP_URL=http://HOST_IP:9222 jika browser sudah jalan di Windows.
+ * ATURAN:
+ *  - TIDAK PERNAH kill chrome.exe (agar browser biasa user tidak ikut tertutup)
+ *  - Hanya launch jika port belum aktif
+ *  - Gunakan PowerShell CIM untuk detach yang benar dari WSL (terbukti di launch_stable_linkedin.py)
+ *  - --remote-debugging-address=0.0.0.0 agar port bisa diakses dari WSL via HOST_IP
  */
 
-'use strict';
-
 const net            = require('net');
-const { exec, spawn } = require('child_process');
+const { exec }       = require('child_process');
 const path           = require('path');
 const fs             = require('fs');
 const { execSync }   = require('child_process');
@@ -29,55 +29,56 @@ function getHostIP() {
     return '127.0.0.1';
 }
 
-const HOST_IP = getHostIP();
+const HOST_IP    = getHostIP();
+const CHROME_PATH = String(process.env.CLOAK_CHROME_PATH || '/mnt/c/Users/user/.antigravity/Nexus-DualBrain-AI/bin/cloak/chrome.exe');
+const PROFILE_DIR = String(process.env.CLOAK_PROFILE_DIR || 'C:\\Users\\user\\.antigravity\\Nexus-DualBrain-AI\\bin\\cloak_profile');
+const DEBUG_PORT  = Number(process.env.CLOAK_DEBUG_PORT || 9223);
 
-const CHROME_PATH  = String(process.env.CLOAK_CHROME_PATH || '/mnt/c/Users/user/.antigravity/Nexus-DualBrain-AI/bin/cloak/chrome.exe');
-const PROFILE_DIR  = String(process.env.CLOAK_PROFILE_DIR || 'C:\\Users\\user\\.antigravity\\Nexus-DualBrain-AI\\bin\\cloak_profile');
-const DEBUG_PORT   = Number(process.env.CLOAK_DEBUG_PORT || 9223);
-const CHECK_INTERVAL_MS   = 5_000;
-const RESTART_COOLDOWN_MS = 8_000;
-
-let _watcherTimer    = null;
-let _lastRestartTime = 0;
-let _restartCount    = 0;
-let _isRestarting    = false;
 let _browserAvailable = false;
+let _launched         = false;
 
-/** Deteksi apakah browser mode tersedia di sistem ini */
 function detectBrowserSupport() {
     if (process.env.SKIP_BROWSER === 'true') {
-        console.log('[BrowserWatchdog] SKIP_BROWSER=true — mode tanpa browser diaktifkan.');
+        console.log('[BrowserWatchdog] SKIP_BROWSER=true — mode tanpa browser.');
         return false;
     }
     if (process.platform === 'linux') {
-        // Cek apakah CloakBrowser tersedia via path WSL langsung
         try {
             if (fs.existsSync(CHROME_PATH)) {
-                console.log(`[BrowserWatchdog] ✅ CloakBrowser ditemukan di: ${CHROME_PATH}`);
+                console.log(`[BrowserWatchdog] ✅ CloakBrowser: ${CHROME_PATH}`);
                 return true;
             }
         } catch (_) {}
-        console.log('[BrowserWatchdog] ⚠ CloakBrowser tidak ditemukan di path WSL.');
-        console.log('[BrowserWatchdog] Mode tanpa browser — agent tetap berjalan via teks.');
-        console.log('[BrowserWatchdog] Tip: Pastikan path benar atau set CLOAK_CHROME_PATH di .env');
-        console.log(`[BrowserWatchdog]   CLOAK_CDP_URL=http://${HOST_IP}:${DEBUG_PORT}`);
+        console.log('[BrowserWatchdog] ⚠ CloakBrowser tidak ditemukan — mode teks saja.');
         return false;
     }
-    return true; // Windows native — ok
+    return true;
 }
 
+/**
+ * Cek apakah CDP port aktif.
+ * Coba HOST_IP (Windows gateway dari WSL) dan 127.0.0.1 (jika mirrored networking).
+ */
 function isPortActive(port = DEBUG_PORT) {
-    return new Promise(resolve => {
+    const tryHost = (host) => new Promise(resolve => {
         const sock = new net.Socket();
-        sock.setTimeout(1000);
-        sock
-            .once('connect', () => { sock.destroy(); resolve(true); })
-            .once('timeout',  () => { sock.destroy(); resolve(false); })
-            .once('error',    () => { sock.destroy(); resolve(false); })
-            .connect(port, HOST_IP);
+        sock.setTimeout(1200);
+        sock.once('connect', () => { sock.destroy(); resolve(true); });
+        sock.once('timeout',  () => { sock.destroy(); resolve(false); });
+        sock.once('error',    () => { sock.destroy(); resolve(false); });
+        sock.connect(port, host);
     });
+
+    return Promise.race([
+        tryHost(HOST_IP),
+        tryHost('127.0.0.1'),
+    ]).then(r => r || Promise.all([tryHost(HOST_IP), tryHost('127.0.0.1')]).then(([a, b]) => a || b));
 }
 
+/**
+ * Bersihkan lock file profil agar Chrome tidak hang.
+ * TIDAK membunuh proses Chrome manapun.
+ */
 function clearLockFiles() {
     const locks = ['LOCK', 'SingletonLock', 'SingletonCookie', 'SingletonSocket'];
     let targetDir = PROFILE_DIR;
@@ -86,131 +87,112 @@ function clearLockFiles() {
     }
     for (const f of locks) {
         const p = path.join(targetDir, f);
-        try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) {}
+        try { if (fs.existsSync(p)) { fs.unlinkSync(p); console.log(`[BrowserWatchdog] Lock dihapus: ${f}`); } } catch (_) {}
     }
 }
 
-function killCloakProcesses() {
-    const cmd = process.platform === 'linux' ? 'taskkill.exe' : 'taskkill';
-    return new Promise(resolve => exec(`${cmd} /F /IM chrome.exe`, () => resolve()));
-}
-
-function launchDetached() {
-    const args = [
-        `--user-data-dir=${PROFILE_DIR}`,
+/**
+ * Launch CloakBrowser menggunakan PowerShell CIM — metode yang terbukti berhasil.
+ * CIM membuat proses Windows MANDIRI, terpisah dari WSL/Node.js.
+ * Tidak ada risiko browser ikut mati ketika agen dihentikan.
+ *
+ * Referensi: launch_stable_linkedin.py (sudah terbukti di proyek ini)
+ */
+function launchViaCIM() {
+    const winArgs = [
+        `"${CHROME_PATH.replace(/\//g, '\\').replace('/mnt/c/', 'C:\\')}"`,
+        `--user-data-dir="${PROFILE_DIR}"`,
         `--remote-debugging-port=${DEBUG_PORT}`,
+        `--remote-debugging-address=0.0.0.0`,
         `--remote-allow-origins=*`,
         `--disable-blink-features=AutomationControlled`,
         `--no-sandbox`,
         `--start-maximized`,
-    ];
+    ].join(' ');
 
-    if (process.platform === 'linux') {
-        // WSL: spawn Windows .exe langsung via path /mnt/c/...
-        // detached:true + stdio:'ignore' + unref() = benar-benar terlepas dari Node.js
-        // exec() dengan & TIDAK bisa dipakai karena callback tidak pernah dipanggil
-        // selama browser berjalan (Node menunggu child process selesai)
-        return new Promise((resolve) => {
-            try {
-                const child = spawn(CHROME_PATH, args, {
-                    detached: true,
-                    stdio:    'ignore',
-                    shell:    false,
-                });
-                child.unref(); // Lepaskan dari event loop Node.js — WAJIB
-                console.log(`[BrowserWatchdog] CloakBrowser diluncurkan (PID: ${child.pid})`);
-                resolve('launched');
-            } catch (err) {
-                console.error(`[BrowserWatchdog] spawn gagal: ${err.message}`);
-                resolve('error'); // jangan reject — biarkan watchdog coba lagi
+    const ps = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${winArgs}'}`;
+    const cmd = process.platform === 'linux' ? 'powershell.exe' : 'powershell';
+
+    return new Promise(resolve => {
+        exec(`${cmd} -Command "${ps}"`, { timeout: 10_000 }, (err, stdout, stderr) => {
+            if (err) {
+                console.error(`[BrowserWatchdog] PowerShell CIM gagal: ${err.message}`);
+                resolve(false);
+            } else {
+                const pid = (stdout.match(/ProcessId\s*:\s*(\d+)/) || [])[1] || '?';
+                console.log(`[BrowserWatchdog] ✅ CloakBrowser diluncurkan via CIM (PID Windows: ${pid})`);
+                resolve(true);
             }
-        });
-    }
-
-    // Windows native — pakai PowerShell
-    const command = [`"${CHROME_PATH}"`, ...args].join(' ');
-    const ps = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${command}'}`;
-    return new Promise((resolve, reject) => {
-        exec(`powershell -Command "${ps}"`, (err, stdout, stderr) => {
-            if (err) reject(new Error(stderr || err.message));
-            else resolve(stdout.trim());
         });
     });
 }
 
-async function restartBrowser() {
-    if (!_browserAvailable || _isRestarting) return;
-    const now = Date.now();
-    if (now - _lastRestartTime < RESTART_COOLDOWN_MS) return;
-
-    _isRestarting    = true;
-    _lastRestartTime = now;
-    _restartCount   += 1;
-
-    console.log(`[BrowserWatchdog] Browser mati — restart #${_restartCount}...`);
-    try {
-        await killCloakProcesses();
-        clearLockFiles();
-        await launchDetached();
-        for (let i = 0; i < 15; i++) {
-            await new Promise(r => setTimeout(r, 1000));
-            if (await isPortActive()) {
-                console.log(`[BrowserWatchdog] CloakBrowser aktif di port ${DEBUG_PORT}.`);
-                break;
-            }
-        }
-    } catch (err) {
-        console.error(`[BrowserWatchdog] Gagal restart: ${err.message}`);
-    } finally {
-        _isRestarting = false;
-    }
+/**
+ * Cek apakah PowerShell tersedia di sistem (WSL harus punya powershell.exe).
+ */
+function hasPowerShell() {
+    try { execSync('which powershell.exe', { stdio: 'pipe' }); return true; } catch (_) {}
+    try { execSync('which powershell', { stdio: 'pipe' }); return true; } catch (_) {}
+    return false;
 }
 
 async function start() {
     _browserAvailable = detectBrowserSupport();
+    if (!_browserAvailable) return;
 
-    if (!_browserAvailable) {
-        // Cek apakah browser sudah jalan via env CLOAK_CDP_URL
-        const externalCDP = process.env.CLOAK_CDP_URL;
-        if (externalCDP) {
-            console.log(`[BrowserWatchdog] Menggunakan browser eksternal: ${externalCDP}`);
-        }
-        return; // Lanjut tanpa browser — tidak blocking
+    console.log(`[BrowserWatchdog] Cek CDP port ${DEBUG_PORT}...`);
+
+    if (await isPortActive()) {
+        console.log(`[BrowserWatchdog] ✅ CloakBrowser sudah aktif di port ${DEBUG_PORT} — skip launch.`);
+        _launched = true;
+        return;
     }
 
-    console.log(`[BrowserWatchdog] Memulai watchdog CloakBrowser (port ${DEBUG_PORT})...`);
-    if (!(await isPortActive())) {
-        await restartBrowser();
-    } else {
-        console.log(`[BrowserWatchdog] CloakBrowser sudah aktif di port ${DEBUG_PORT}.`);
+    if (!hasPowerShell()) {
+        console.warn('[BrowserWatchdog] ⚠ powershell.exe tidak tersedia — tidak bisa launch otomatis.');
+        console.warn(`[BrowserWatchdog] Jalankan CloakBrowser manual di Windows lalu set:`);
+        console.warn(`[BrowserWatchdog]   CLOAK_CDP_URL=http://${HOST_IP}:${DEBUG_PORT} di .env`);
+        return;
     }
 
-    _watcherTimer = setInterval(async () => {
-        if (!(await isPortActive())) {
-            console.warn(`[BrowserWatchdog] Port ${DEBUG_PORT} tidak aktif — restart...`);
-            await restartBrowser();
-        }
-    }, CHECK_INTERVAL_MS);
+    console.log('[BrowserWatchdog] Membersihkan lock files profil...');
+    clearLockFiles();
 
-    _watcherTimer.unref();
+    console.log('[BrowserWatchdog] Meluncurkan CloakBrowser (PowerShell CIM)...');
+    const ok = await launchViaCIM();
+    if (!ok) {
+        console.error('[BrowserWatchdog] ❌ Gagal launch — agent lanjut tanpa browser.');
+        return;
+    }
+
+    // Tunggu browser siap — maks 20 detik
+    console.log('[BrowserWatchdog] Menunggu CloakBrowser siap...');
+    for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        if (await isPortActive()) {
+            console.log(`[BrowserWatchdog] ✅ CloakBrowser aktif di port ${DEBUG_PORT}!`);
+            _launched = true;
+            return;
+        }
+        if (i === 9) console.log('[BrowserWatchdog] Masih menunggu browser...');
+    }
+    console.warn(`[BrowserWatchdog] ⚠ Port ${DEBUG_PORT} belum aktif setelah 20 detik.`);
+    console.warn('[BrowserWatchdog] Kemungkinan penyebab:');
+    console.warn('  1. Profile dir salah atau terkunci');
+    console.warn('  2. Firewall Windows blokir port 9223');
+    console.warn('  3. CloakBrowser crash saat startup');
+    console.warn('[BrowserWatchdog] Agent tetap lanjut — browser bisa disambung nanti.');
 }
 
-function stop() {
-    if (_watcherTimer) {
-        clearInterval(_watcherTimer);
-        _watcherTimer = null;
-        console.log('[BrowserWatchdog] Watchdog dihentikan.');
-    }
-}
+function stop() {}
 
 async function ensureRunning() {
     if (!_browserAvailable) {
         const cdpUrl = process.env.CLOAK_CDP_URL || `http://${HOST_IP}:${DEBUG_PORT}`;
-        console.log(`[BrowserWatchdog] Mode tanpa browser — mengembalikan CDP URL: ${cdpUrl}`);
         return { cdpUrl, port: DEBUG_PORT };
     }
     const alive = await isPortActive();
-    if (!alive) await restartBrowser();
+    if (!alive && !_launched) await start();
     return { cdpUrl: `http://${HOST_IP}:${DEBUG_PORT}`, port: DEBUG_PORT };
 }
 
