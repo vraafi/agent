@@ -13,7 +13,7 @@
 'use strict';
 
 const net            = require('net');
-const { exec }       = require('child_process');
+const { exec, spawn } = require('child_process');
 const path           = require('path');
 const fs             = require('fs');
 const { execSync }   = require('child_process');
@@ -96,44 +96,40 @@ function killCloakProcesses() {
 }
 
 function launchDetached() {
-    // Di Linux/WSL: jalankan langsung via path WSL (/mnt/c/...)
-    // Di Windows native: jalankan via PowerShell
-    if (process.platform === 'linux') {
-        const command = [
-            `"${CHROME_PATH}"`,
-            `--user-data-dir="${PROFILE_DIR}"`,
-            `--remote-debugging-port=${DEBUG_PORT}`,
-            `--remote-allow-origins=*`,
-            `--disable-blink-features=AutomationControlled`,
-            `--no-sandbox`,
-            `--start-maximized`,
-        ].join(' ');
-
-        return new Promise((resolve, reject) => {
-            // Kill proses chrome lama dulu, lalu launch browser baru di background
-            exec(`taskkill.exe /F /IM chrome.exe 2>/dev/null; ${command} &`, (err, stdout, stderr) => {
-                // err bisa non-null karena taskkill.exe mungkin tidak ada — abaikan
-                console.log(`[BrowserWatchdog] Launch output: ${stdout.trim() || '(detached)'}`);
-                if (stderr && !stderr.includes('taskkill') && !stderr.includes('not found')) {
-                    console.warn(`[BrowserWatchdog] Launch stderr: ${stderr.trim()}`);
-                }
-                resolve(stdout.trim());
-            });
-        });
-    }
-
-    // Windows native — pakai PowerShell
-    const command = [
-        `"${CHROME_PATH}"`,
-        `--user-data-dir="${PROFILE_DIR}"`,
+    const args = [
+        `--user-data-dir=${PROFILE_DIR}`,
         `--remote-debugging-port=${DEBUG_PORT}`,
         `--remote-allow-origins=*`,
         `--disable-blink-features=AutomationControlled`,
         `--no-sandbox`,
         `--start-maximized`,
-    ].join(' ');
+    ];
 
-    const ps  = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${command}'}`;
+    if (process.platform === 'linux') {
+        // WSL: spawn Windows .exe langsung via path /mnt/c/...
+        // detached:true + stdio:'ignore' + unref() = benar-benar terlepas dari Node.js
+        // exec() dengan & TIDAK bisa dipakai karena callback tidak pernah dipanggil
+        // selama browser berjalan (Node menunggu child process selesai)
+        return new Promise((resolve) => {
+            try {
+                const child = spawn(CHROME_PATH, args, {
+                    detached: true,
+                    stdio:    'ignore',
+                    shell:    false,
+                });
+                child.unref(); // Lepaskan dari event loop Node.js — WAJIB
+                console.log(`[BrowserWatchdog] CloakBrowser diluncurkan (PID: ${child.pid})`);
+                resolve('launched');
+            } catch (err) {
+                console.error(`[BrowserWatchdog] spawn gagal: ${err.message}`);
+                resolve('error'); // jangan reject — biarkan watchdog coba lagi
+            }
+        });
+    }
+
+    // Windows native — pakai PowerShell
+    const command = [`"${CHROME_PATH}"`, ...args].join(' ');
+    const ps = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${command}'}`;
     return new Promise((resolve, reject) => {
         exec(`powershell -Command "${ps}"`, (err, stdout, stderr) => {
             if (err) reject(new Error(stderr || err.message));
