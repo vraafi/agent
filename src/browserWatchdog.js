@@ -12,11 +12,11 @@
  *  - --remote-debugging-address=0.0.0.0 agar port bisa diakses dari WSL via HOST_IP
  */
 
-const net            = require('net');
-const { exec }       = require('child_process');
-const path           = require('path');
-const fs             = require('fs');
-const { execSync }   = require('child_process');
+const net                    = require('net');
+const { exec, execFile }     = require('child_process');
+const path                   = require('path');
+const fs                     = require('fs');
+const { execSync }           = require('child_process');
 
 function getHostIP() {
     if (process.platform === 'linux') {
@@ -57,22 +57,24 @@ function detectBrowserSupport() {
 
 /**
  * Cek apakah CDP port aktif.
- * Coba HOST_IP (Windows gateway dari WSL) dan 127.0.0.1 (jika mirrored networking).
+ * Coba HOST_IP (Windows gateway dari WSL) lalu 127.0.0.1 (WSL mirrored networking).
+ * Timeout per percobaan: 1.5 detik.
  */
-function isPortActive(port = DEBUG_PORT) {
-    const tryHost = (host) => new Promise(resolve => {
+function tryTcpConnect(host, port) {
+    return new Promise(resolve => {
         const sock = new net.Socket();
-        sock.setTimeout(1200);
+        sock.setTimeout(1500);
         sock.once('connect', () => { sock.destroy(); resolve(true); });
         sock.once('timeout',  () => { sock.destroy(); resolve(false); });
         sock.once('error',    () => { sock.destroy(); resolve(false); });
         sock.connect(port, host);
     });
+}
 
-    return Promise.race([
-        tryHost(HOST_IP),
-        tryHost('127.0.0.1'),
-    ]).then(r => r || Promise.all([tryHost(HOST_IP), tryHost('127.0.0.1')]).then(([a, b]) => a || b));
+async function isPortActive(port = DEBUG_PORT) {
+    if (await tryTcpConnect(HOST_IP, port)) return true;
+    if (await tryTcpConnect('127.0.0.1', port)) return true;
+    return false;
 }
 
 /**
@@ -94,14 +96,22 @@ function clearLockFiles() {
 /**
  * Launch CloakBrowser menggunakan PowerShell CIM — metode yang terbukti berhasil.
  * CIM membuat proses Windows MANDIRI, terpisah dari WSL/Node.js.
- * Tidak ada risiko browser ikut mati ketika agen dihentikan.
  *
- * Referensi: launch_stable_linkedin.py (sudah terbukti di proyek ini)
+ * PENTING: gunakan execFile bukan exec agar TIDAK ada shell yang mem-parse kutipan.
+ * exec("powershell -Command \"...\"") gagal jika CommandLine punya tanda " di dalamnya.
+ * execFile('powershell.exe', ['-Command', ps]) mengirim ps langsung tanpa shell quoting.
  */
 function launchViaCIM() {
-    const winArgs = [
-        `"${CHROME_PATH.replace(/\//g, '\\').replace('/mnt/c/', 'C:\\')}"`,
-        `--user-data-dir="${PROFILE_DIR}"`,
+    // Konversi path WSL → Windows (hapus /mnt/c/ → C:\)
+    const winChromePath = CHROME_PATH
+        .replace('/mnt/c/', 'C:\\')
+        .replace(/\//g, '\\');
+
+    // Bangun CommandLine — TANPA tanda kutip di sekitar executable
+    // (path tidak mengandung spasi, jadi tidak perlu quote)
+    const commandLine = [
+        winChromePath,
+        `--user-data-dir=${PROFILE_DIR}`,
         `--remote-debugging-port=${DEBUG_PORT}`,
         `--remote-debugging-address=0.0.0.0`,
         `--remote-allow-origins=*`,
@@ -110,20 +120,41 @@ function launchViaCIM() {
         `--start-maximized`,
     ].join(' ');
 
-    const ps = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${winArgs}'}`;
-    const cmd = process.platform === 'linux' ? 'powershell.exe' : 'powershell';
+    // PowerShell script — pakai kutip ganda di sekitar commandLine
+    // karena tidak ada kutip ganda di dalam commandLine itu sendiri
+    const psScript = [
+        `$proc = Invoke-CimMethod -ClassName Win32_Process -MethodName Create`,
+        `-Arguments @{CommandLine="${commandLine}"}`,
+        `Write-Output "ReturnValue=$($proc.ReturnValue) ProcessId=$($proc.ProcessId)"`,
+    ].join(' ');
 
+    const psBin = process.platform === 'linux' ? 'powershell.exe' : 'powershell';
+
+    // execFile: argumen diteruskan langsung ke OS tanpa melalui shell
+    // Tidak ada risiko konflik tanda kutip
     return new Promise(resolve => {
-        exec(`${cmd} -Command "${ps}"`, { timeout: 10_000 }, (err, stdout, stderr) => {
-            if (err) {
-                console.error(`[BrowserWatchdog] PowerShell CIM gagal: ${err.message}`);
-                resolve(false);
-            } else {
-                const pid = (stdout.match(/ProcessId\s*:\s*(\d+)/) || [])[1] || '?';
-                console.log(`[BrowserWatchdog] ✅ CloakBrowser diluncurkan via CIM (PID Windows: ${pid})`);
-                resolve(true);
+        execFile(psBin, ['-NonInteractive', '-NoProfile', '-Command', psScript],
+            { timeout: 12_000 },
+            (err, stdout, stderr) => {
+                if (err) {
+                    console.error(`[BrowserWatchdog] PowerShell CIM error: ${err.message}`);
+                    if (stderr) console.error(`[BrowserWatchdog] stderr: ${stderr.trim()}`);
+                    resolve(false);
+                    return;
+                }
+                const out   = stdout.trim();
+                const retVal = (out.match(/ReturnValue=(\d+)/) || [])[1];
+                const pid    = (out.match(/ProcessId=(\d+)/)   || [])[1] || '?';
+                if (retVal === '0') {
+                    console.log(`[BrowserWatchdog] ✅ CloakBrowser diluncurkan via CIM (PID: ${pid})`);
+                    resolve(true);
+                } else {
+                    console.error(`[BrowserWatchdog] CIM ReturnValue=${retVal} — browser gagal start.`);
+                    console.error(`[BrowserWatchdog] stdout: ${out}`);
+                    resolve(false);
+                }
             }
-        });
+        );
     });
 }
 
