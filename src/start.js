@@ -14,9 +14,11 @@ const earningsTracker  = require('./earningsTracker');
 const telegramNotifier = require('./telegramNotifier');
 const browserWatchdog  = require('./browserWatchdog');
 const platformSetup    = require('./platformSetup');
+const { runDiagnostics } = require('./diagnostics');
 
 const NINEROUTER_PORT     = Number(process.env.NINEROUTER_PORT || 8080);
-const NINEROUTER_URL      = process.env.NINEROUTER_EXTERNAL_URL || `http://127.0.0.1:${NINEROUTER_PORT}`;
+// Pastikan tidak ada trailing /v1 agar tidak jadi double /v1/v1 saat diteruskan ke Hermes
+const NINEROUTER_URL      = (process.env.NINEROUTER_EXTERNAL_URL || `http://127.0.0.1:${NINEROUTER_PORT}`).replace(/\/v1\/?$/, '');
 const NINEROUTER_KEY      = process.env.NINEROUTER_KEY || process.env.NINER_ROUTER_API_KEY || 'sk-9router-local';
 const HERMES_MODEL        = process.env.HERMES_MODEL || 'kr/claude-sonnet-4.5';
 const USER_EMAIL          = process.env.PLATFORM_EMAIL    || '';
@@ -112,6 +114,17 @@ function waitForRouter(url, maxMs = 30_000) {
 }
 
 async function main() {
+    // ── Diagnostics ──────────────────────────────────────────────
+    try {
+        const diag = await runDiagnostics();
+        if (diag.hasErrors) {
+            console.error('\n[Orchestrator] ❌ Ditemukan ERROR kritis saat diagnostics. Perbaiki masalah di atas sebelum menjalankan agent.\n');
+            process.exit(1);
+        }
+    } catch (diagErr) {
+        console.warn(`[Diagnostics] ⚠ Tidak bisa jalankan diagnostics: ${diagErr.message} — lanjut tetap.`);
+    }
+
     console.log('═'.repeat(60));
     console.log('  HermesMoneyAgent v7.2 — Fastwork Priority');
     console.log(`  Model   : ${HERMES_MODEL}`);
@@ -194,7 +207,7 @@ async function main() {
             TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
             TELEGRAM_CHAT_ID:   process.env.TELEGRAM_CHAT_ID   || '',
             CLOAK_CDP_URL:      browserWatchdog.CDP_URL,
-            CLOAK_DEBUG_PORT:   '9222',
+            CLOAK_DEBUG_PORT:   '9223',
             PLATFORM_EMAIL:     USER_EMAIL,
             PLATFORM_PASSWORD:  USER_PASSWORD,
             HERMES_HOME:        process.env.HERMES_HOME || path.join(process.env.HOME || '', '.hermes'),
