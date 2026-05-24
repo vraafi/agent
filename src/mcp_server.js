@@ -233,7 +233,61 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: 'ensure_browser',
-            description: 'Pastikan CloakBrowser (stealth, anti-bot) berjalan. Return CDP URL.',
+            description: 'Pastikan browser (Playwright Chromium) berjalan. Return CDP URL.',
+            inputSchema: { type: 'object', properties: {}, required: [] },
+        },
+        {
+            name: 'browser_navigate',
+            description: 'Buka URL di browser yang dikontrol AI. Return judul halaman dan HTML ringkas.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    url: { type: 'string', description: 'URL yang akan dibuka, contoh: https://fastwork.id' },
+                    wait_until: {
+                        type: 'string',
+                        description: 'Kapan selesai: "domcontentloaded" (default) atau "networkidle"',
+                    },
+                },
+                required: ['url'],
+            },
+        },
+        {
+            name: 'browser_click',
+            description: 'Klik elemen di browser. Gunakan setelah browser_navigate.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    selector: { type: 'string', description: 'CSS selector atau teks elemen. Contoh: "button:has-text(\'Login\')"' },
+                    text:     { type: 'string', description: 'Klik berdasarkan teks yang terlihat (alternatif selector)' },
+                },
+            },
+        },
+        {
+            name: 'browser_type',
+            description: 'Ketik teks ke dalam input di browser.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    selector: { type: 'string', description: 'CSS selector input yang akan diketik' },
+                    text:     { type: 'string', description: 'Teks yang akan diketik' },
+                    clear:    { type: 'boolean', description: 'Bersihkan isi input dulu (default: true)' },
+                },
+                required: ['selector', 'text'],
+            },
+        },
+        {
+            name: 'browser_screenshot',
+            description: 'Ambil screenshot halaman browser saat ini untuk melihat tampilannya.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    full_page: { type: 'boolean', description: 'Screenshot seluruh halaman (default: false)' },
+                },
+            },
+        },
+        {
+            name: 'browser_get_text',
+            description: 'Ambil semua teks yang terlihat di halaman browser saat ini.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
     ],
@@ -429,8 +483,110 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
     }
 
+    // ── browser tools — gunakan Playwright langsung di Node.js ───────────────
+    const playwrightTools = ['browser_navigate', 'browser_click', 'browser_type', 'browser_screenshot', 'browser_get_text'];
+    if (playwrightTools.includes(name)) {
+        return await handleBrowserTool(name, args);
+    }
+
     return { content: [{ type: 'text', text: `Tool tidak dikenal: ${name}` }], isError: true };
 });
+
+// ── Playwright Browser State ──────────────────────────────────────────────────
+let _pwPage = null;
+
+async function getBrowserPage() {
+    // Gunakan browser yang sudah diluncurkan oleh browserWatchdog (shared instance)
+    const browser = await browserWatchdog.getBrowser();
+
+    if (!browser || !browser.isConnected()) {
+        throw new Error('Browser tidak tersedia. Coba panggil ensure_browser() dulu.');
+    }
+
+    if (!_pwPage || _pwPage.isClosed()) {
+        const contexts = browser.contexts();
+        const ctx = contexts.length > 0 ? contexts[contexts.length - 1] : await browser.newContext({
+            userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            viewport: { width: 1280, height: 800 },
+        });
+        const pages = ctx.pages();
+        _pwPage = pages.length > 0 ? pages[0] : await ctx.newPage();
+    }
+
+    return _pwPage;
+}
+
+async function handleBrowserTool(name, args) {
+    try {
+        const page = await getBrowserPage();
+
+        if (name === 'browser_navigate') {
+            const { url, wait_until = 'domcontentloaded' } = args;
+            console.error(`[MCP Browser] Navigasi ke: ${url}`);
+            await page.goto(url, { waitUntil: wait_until, timeout: 30_000 });
+            const title   = await page.title();
+            const bodyText = await page.evaluate(() => {
+                const el = document.body;
+                return el ? el.innerText.substring(0, 2000) : '';
+            });
+            return {
+                content: [{
+                    type: 'text',
+                    text:
+                        `✅ Berhasil buka: ${url}\n` +
+                        `Judul: ${title}\n` +
+                        `URL saat ini: ${page.url()}\n\n` +
+                        `=== ISI HALAMAN (2000 char pertama) ===\n${bodyText}`,
+                }],
+            };
+        }
+
+        if (name === 'browser_click') {
+            const { selector, text } = args;
+            if (text) {
+                await page.getByText(text, { exact: false }).first().click({ timeout: 10_000 });
+                return { content: [{ type: 'text', text: `✅ Klik teks: "${text}"` }] };
+            }
+            await page.locator(selector).first().click({ timeout: 10_000 });
+            return { content: [{ type: 'text', text: `✅ Klik: ${selector}` }] };
+        }
+
+        if (name === 'browser_type') {
+            const { selector, text, clear = true } = args;
+            const loc = page.locator(selector).first();
+            if (clear) await loc.clear();
+            await loc.type(text, { delay: 50 });
+            return { content: [{ type: 'text', text: `✅ Ketik "${text}" ke: ${selector}` }] };
+        }
+
+        if (name === 'browser_screenshot') {
+            const { full_page = false } = args;
+            const buf = await page.screenshot({ fullPage: full_page, type: 'jpeg', quality: 60 });
+            const b64 = buf.toString('base64');
+            return {
+                content: [
+                    { type: 'text', text: `📸 Screenshot (${full_page ? 'full page' : 'viewport'}) — URL: ${page.url()}` },
+                    { type: 'image', data: b64, mimeType: 'image/jpeg' },
+                ],
+            };
+        }
+
+        if (name === 'browser_get_text') {
+            const text = await page.evaluate(() => document.body?.innerText || '');
+            return {
+                content: [{
+                    type: 'text',
+                    text: `=== TEKS HALAMAN: ${page.url()} ===\n\n${text.substring(0, 5000)}`,
+                }],
+            };
+        }
+    } catch (err) {
+        // Reset state jika error
+        _pwPage    = null;
+        _pwBrowser = null;
+        return { content: [{ type: 'text', text: `❌ Browser error [${name}]: ${err.message}` }], isError: true };
+    }
+}
 
 async function main() {
     const transport = new StdioServerTransport();

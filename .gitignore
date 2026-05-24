@@ -1,5 +1,11 @@
-node_modules/
-9router-data/
-logs/
-.env
 venv/
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
+.env
+*.sqlite
+*.db
+logs/*.log
+hermes-agent/.venv/
+hermes-agent/__pycache__/

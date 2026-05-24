@@ -189,7 +189,9 @@ async function main() {
 
     console.log('\n[6/6] Spawning Hermes Gateway...');
     const hermesDir  = path.join(__dirname, '..', 'hermes-agent');
-    const hermesPy   = path.join(hermesDir, '..', 'venv', 'bin', 'python');
+    // Coba venv lokal dulu, fallback ke system python3
+    const venvPy     = path.join(hermesDir, '..', 'venv', 'bin', 'python');
+    const hermesPy   = fs.existsSync(venvPy) ? venvPy : (process.env.PYTHON_BIN || 'python3');
     const hermesCli  = path.join(hermesDir, 'cli.py');
     const hermesHome = process.env.HERMES_HOME || path.join(process.env.HOME || '', '.hermes');
 

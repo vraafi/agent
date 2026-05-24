@@ -144,59 +144,75 @@ async function runDiagnostics() {
         ok('hermes-agent/', 'Folder ada');
     }
 
-    if (!fs.existsSync(venvPy)) {
-        err('venv Python', `Python venv tidak ditemukan di ${venvPy}. Jalankan: cd hermes-agent && ./scripts/install.sh`);
-        errors.push('Python venv belum dibuat');
+    // Gunakan venv jika ada, fallback ke system python3
+    const pyBin = fs.existsSync(venvPy) ? venvPy : (process.env.PYTHON_BIN || 'python3');
+    try {
+        const ver = execSync(`"${pyBin}" --version 2>&1`, { stdio: 'pipe' }).toString().trim();
+        ok('venv Python', ver);
+    } catch (_) {
+        warn('venv Python', `Python tidak ditemukan. Pastikan python3 atau venv tersedia.`);
+        warns.push('Python tidak tersedia');
+    }
+
+    // Cek module websockets
+    try {
+        execSync(`"${pyBin}" -c "import websockets"`, { stdio: 'pipe' });
+        ok('websockets', 'Module tersedia');
+    } catch (_) {
+        warn('websockets', 'Module tidak ada → browser_dialog_tool tidak aktif. Fix: pip install websockets --break-system-packages');
+        warns.push('Python module "websockets" tidak terinstall');
+    }
+
+    // Cek hermes-agent terinstall sebagai package
+    try {
+        execSync(`"${pyBin}" -c "import hermes_cli"`, { stdio: 'pipe' });
+        ok('hermes-agent package', 'Terinstall dan bisa diimport');
+    } catch (_) {
+        warn('hermes-agent package', 'Belum terinstall. Jalankan: npm run install:hermes');
+        warns.push('hermes-agent Python package belum terinstall');
+    }
+
+    // Cek cli.py
+    if (!fs.existsSync(hermesCli)) {
+        err('cli.py', `Tidak ditemukan di ${hermesCli}`);
+        errors.push('Hermes cli.py tidak ada');
     } else {
-        // Cek versi Python
-        try {
-            const ver = execSync(`"${venvPy}" --version 2>&1`, { stdio: 'pipe' }).toString().trim();
-            ok('venv Python', ver);
-        } catch (_) {
-            warn('venv Python', 'Tidak bisa cek versi');
-        }
-
-        // Cek module websockets (diperlukan untuk browser_dialog_tool)
-        try {
-            execSync(`"${venvPy}" -c "import websockets"`, { stdio: 'pipe' });
-            ok('websockets', 'Module tersedia');
-        } catch (_) {
-            warn('websockets', 'Module tidak ada → browser_dialog_tool tidak aktif. Fix: source venv/bin/activate && pip install websockets');
-            warns.push('Python module "websockets" tidak terinstall');
-        }
-
-        // Cek cli.py
-        if (!fs.existsSync(hermesCli)) {
-            err('cli.py', `Tidak ditemukan di ${hermesCli}`);
-            errors.push('Hermes cli.py tidak ada');
-        } else {
-            ok('cli.py', 'Ditemukan');
-        }
+        ok('cli.py', 'Ditemukan');
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 5. CLOAK BROWSER
+    // 5. BROWSER (Playwright Chromium)
     // ─────────────────────────────────────────────────────────────
-    console.log('\n' + BOLD + '[ 5 ] CloakBrowser' + RESET);
+    console.log('\n' + BOLD + '[ 5 ] Browser Automation (Playwright)' + RESET);
 
     const skipBrowser = process.env.SKIP_BROWSER === 'true';
-    const cloakPath   = process.env.CLOAK_CHROME_PATH || '/mnt/c/Users/user/.antigravity/Nexus-DualBrain-AI/bin/cloak/chrome.exe';
-    const cloakPort   = Number(process.env.CLOAK_DEBUG_PORT || 9223);
-    const cloakHost   = process.env.CLOAK_HOST || '127.0.0.1';
+    const cdpPort     = Number(process.env.CLOAK_DEBUG_PORT || 9223);
 
     if (skipBrowser) {
-        warn('CloakBrowser', 'SKIP_BROWSER=true — browser dinonaktifkan. PlatformSetup akan dilewati otomatis.');
-    } else if (!fs.existsSync(cloakPath)) {
-        warn('CloakBrowser', `Binary tidak ditemukan di: ${cloakPath}\n              Set CLOAK_CHROME_PATH di .env atau SKIP_BROWSER=true`);
-        warns.push('CloakBrowser binary tidak ditemukan');
+        warn('Browser', 'SKIP_BROWSER=true — browser dinonaktifkan. PlatformSetup akan dilewati otomatis.');
     } else {
-        ok('CloakBrowser binary', cloakPath);
-        // Cek apakah CDP port sudah aktif
-        const cdpAlive = await checkTcpPort(cloakHost, cloakPort);
-        if (cdpAlive) {
-            ok(`CDP port ${cloakPort}`, `Aktif di ${cloakHost}:${cloakPort}`);
+        // Cari Playwright Chromium yang sudah di-download
+        const playwrightCacheDir = path.join(__dirname, '..', '.cache', 'ms-playwright');
+        const homeCacheDir = path.join(process.env.HOME || '', '.cache', 'ms-playwright');
+        let chromiumFound = false;
+        for (const cacheDir of [playwrightCacheDir, homeCacheDir]) {
+            if (fs.existsSync(cacheDir)) {
+                const dirs = fs.readdirSync(cacheDir).filter(d => d.startsWith('chromium'));
+                if (dirs.length > 0) { chromiumFound = true; break; }
+            }
+        }
+        if (chromiumFound) {
+            ok('Playwright Chromium', 'Browser tersedia — AI agent bisa kontrol browser');
         } else {
-            warn(`CDP port ${cloakPort}`, `Belum aktif — Watchdog akan launch otomatis`);
+            warn('Playwright Chromium', 'Belum di-download. Jalankan: npx playwright install chromium');
+            warns.push('Playwright Chromium belum terinstall');
+        }
+        // Cek apakah CDP port sudah aktif (dari sesi sebelumnya)
+        const cdpAlive = await checkTcpPort('127.0.0.1', cdpPort);
+        if (cdpAlive) {
+            ok(`CDP port ${cdpPort}`, `Browser sudah aktif di port ${cdpPort}`);
+        } else {
+            info(`CDP port ${cdpPort}: Belum aktif — Watchdog akan launch otomatis saat agent start`);
         }
     }
 

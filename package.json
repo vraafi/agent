@@ -1,4 +1,12 @@
 {
+  "scripts": {
+    "start": "node -r dotenv/config src/start.js",
+    "mcp": "node src/mcp_server.js",
+    "install:hermes": "python3 -m pip install -e hermes-agent/ --break-system-packages",
+    "install:9router": "cd 9router && npm install",
+    "install:browser": "npx playwright install chromium",
+    "setup": "npm install && npm run install:hermes && npm run install:browser"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^17.4.2",

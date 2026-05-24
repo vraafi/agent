@@ -1,0 +1,106 @@
+{
+  "providerConnections": [
+    {
+      "id": "kiro-free",
+      "provider": "kiro",
+      "authType": "none",
+      "isActive": true,
+      "priority": 1,
+      "name": "Kiro AI (Free Claude Sonnet 4.5)"
+    },
+    {
+      "id": "gemini-key-1",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-1",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 1"
+    },
+    {
+      "id": "gemini-key-2",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-2",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 2"
+    },
+    {
+      "id": "gemini-key-3",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-3",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 3"
+    },
+    {
+      "id": "gemini-key-4",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-4",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 4"
+    },
+    {
+      "id": "gemini-key-5",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-5",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 5"
+    },
+    {
+      "id": "gemini-key-6",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-6",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 6"
+    },
+    {
+      "id": "gemini-key-7",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-7",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 7"
+    },
+    {
+      "id": "gemini-key-8",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-8",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 8"
+    },
+    {
+      "id": "gemini-key-9",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-9",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 9"
+    },
+    {
+      "id": "gemini-key-10",
+      "provider": "google",
+      "authType": "apikey",
+      "accessToken": "dummy-key-10",
+      "isActive": true,
+      "priority": 2,
+      "name": "Gemini Fallback 10"
+    }
+  ],
+  "settings": {
+    "comboStrategy": "fallback",
+    "rtkEnabled": true
+  }
+}
