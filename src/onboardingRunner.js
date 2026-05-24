@@ -17,9 +17,11 @@
 
 const { chromium } = require('playwright');
 
-// Konfigurasi CloakBrowser
-const CLOAK_CDP_URL   = process.env.CLOAK_CDP_URL   || 'http://127.0.0.1:9222';
-const CLOAK_CDP_PORT  = process.env.CLOAK_DEBUG_PORT || '9222';
+// Gunakan HOST_IP dari browserWatchdog agar konsisten
+// Di WSL2, CloakBrowser berjalan di Windows (bukan 127.0.0.1 WSL)
+const { HOST_IP, DEBUG_PORT } = require('./browserWatchdog');
+const CLOAK_DEBUG_PORT = process.env.CLOAK_DEBUG_PORT || String(DEBUG_PORT);
+const CLOAK_CDP_URL    = process.env.CLOAK_CDP_URL   || `http://${HOST_IP}:${CLOAK_DEBUG_PORT}`;
 
 let _browser = null;
 let _context = null;
