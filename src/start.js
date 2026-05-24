@@ -229,10 +229,40 @@ async function main() {
         }
 
         fs.writeFileSync(hermesEnvPath, existing.trimStart());
-        console.log(`[Hermes] Config ditulis ke ${hermesEnvPath}`);
+        console.log(`[Hermes] .env ditulis ke ${hermesEnvPath}`);
+
+        // ── Tulis ~/.hermes/config.yaml ───────────────────────────
+        // PENTING: ~/.hermes/.env saja tidak cukup!
+        // Hermes Gateway hardcode "openrouter" provider untuk model kr/*
+        // dan ABAIKAN OPENROUTER_BASE_URL dari env.
+        // Satu-satunya cara override: tulis config.yaml dengan model.provider=custom.
+        // Referensi: https://github.com/nousresearch/hermes-agent docs
+        const hermesConfigPath = path.join(hermesHome, 'config.yaml');
+        const hermesConfig = `# HermesMoneyAgent — auto-generated config
+# Model routing ke VPS 9Router (bukan openrouter.ai langsung)
+model:
+  default: "kr/claude-sonnet-4.5"
+  provider: "custom"
+  base_url: "${routerV1}"
+  api_key: "${NINEROUTER_KEY}"
+
+gateway:
+  allow_all_users: true
+${tgToken ? `
+platforms:
+  telegram:
+    bot_token: "${tgToken}"
+    allowed_users:
+      - "${tgChatId}"
+` : ''}
+browser:
+  cdp_url: "${browserWatchdog.CDP_URL}"
+`;
+        fs.writeFileSync(hermesConfigPath, hermesConfig);
+        console.log(`[Hermes] config.yaml ditulis ke ${hermesConfigPath}`);
         console.log(`[Hermes] Router: ${routerV1} | Telegram allowed: ${tgChatId || '(semua)'}`);
     } catch (e) {
-        console.warn(`[Hermes] Gagal patch ~/.hermes/.env: ${e.message}`);
+        console.warn(`[Hermes] Gagal tulis config: ${e.message}`);
     }
 
     const hermesProcess = spawn(hermesPy, [
