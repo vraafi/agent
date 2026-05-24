@@ -1,23 +1,19 @@
 /**
- * mcp_server.js v5.0
+ * mcp_server.js v5.1
  * ==================
  * MCP Server — Hermes Agent ↔ Node.js bridge.
  *
  * Tools:
+ *   web_search          — Cari di DuckDuckGo (BARU)
  *   discover_tasks      — Scan platform, return peluang ranked $/jam
  *   complete_task       — Catat task selesai + cek milestone
- *   get_earnings        — Laporan sesi: rate, on-track, rekomendasi
+ *   get_earnings        — Laporan sesi
  *   evaluate_strategy   — Evaluasi apakah perlu ganti platform
  *   log_strategy_switch — Catat perpindahan platform
  *   setup_platforms     — Daftar ke semua platform $0 modal
- *   check_user_signals  — Cek sinyal/perintah dari user (backup bridge)
+ *   check_user_signals  — Cek sinyal dari user (backup)
  *   send_telegram_update— Kirim notif ke Telegram
  *   ensure_browser      — Pastikan CloakBrowser aktif
- *
- * CATATAN: Hermes v7+ berjalan dalam GATEWAY MODE.
- * Pesan Telegram user diterima langsung oleh Hermes (busy_input_mode: steer).
- * Tool check_user_signals ini sebagai BACKUP untuk membaca sinyal file-based
- * jika gateway belum dikonfigurasi.
  */
 
 'use strict';
@@ -28,8 +24,10 @@ const {
     CallToolRequestSchema,
     ListToolsRequestSchema,
 }                              = require('@modelcontextprotocol/sdk/types.js');
-const path = require('path');
-const fs   = require('fs');
+const https   = require('https');
+const http    = require('http');
+const path    = require('path');
+const fs      = require('fs');
 
 const taskDiscovery    = require('./taskDiscovery.js');
 const earningsTracker  = require('./earningsTracker.js');
@@ -40,18 +38,130 @@ const platformSetup    = require('./platformSetup.js');
 const SIGNALS_DIR = path.join(__dirname, '..', '9router-data', 'signals');
 
 const server = new Server(
-    { name: 'money-agent-mcp', version: '5.0.0' },
+    { name: 'money-agent-mcp', version: '5.1.0' },
     { capabilities: { tools: {} } }
 );
+
+// ── Web Search via DuckDuckGo ─────────────────────────────────────────────────
+function duckduckgoSearch(query, maxResults = 5) {
+    return new Promise((resolve) => {
+        // DuckDuckGo Instant Answer API — tidak butuh API key
+        const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1&no_redirect=1`;
+
+        https.get(url, { headers: { 'User-Agent': 'HermesMoneyAgent/1.0' } }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try {
+                    const json = JSON.parse(data);
+                    const results = [];
+
+                    // AbstractText — ringkasan utama
+                    if (json.AbstractText) {
+                        results.push({
+                            title: json.Heading || query,
+                            snippet: json.AbstractText,
+                            url: json.AbstractURL || '',
+                            source: 'DuckDuckGo Abstract',
+                        });
+                    }
+
+                    // RelatedTopics — hasil terkait
+                    for (const topic of (json.RelatedTopics || [])) {
+                        if (results.length >= maxResults) break;
+                        if (topic.Text && topic.FirstURL) {
+                            results.push({
+                                title: topic.Text.split(' - ')[0] || topic.Text,
+                                snippet: topic.Text,
+                                url: topic.FirstURL,
+                                source: 'DuckDuckGo Related',
+                            });
+                        }
+                        // Sub-topics
+                        if (topic.Topics) {
+                            for (const sub of topic.Topics) {
+                                if (results.length >= maxResults) break;
+                                if (sub.Text && sub.FirstURL) {
+                                    results.push({
+                                        title: sub.Text.split(' - ')[0] || sub.Text,
+                                        snippet: sub.Text,
+                                        url: sub.FirstURL,
+                                        source: 'DuckDuckGo Topic',
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Jika tidak ada hasil, gunakan HTML search
+                    if (results.length === 0) {
+                        results.push({
+                            title: `Cari "${query}" di DuckDuckGo`,
+                            snippet: `Tidak ada hasil instant. Buka: https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+                            url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+                            source: 'DuckDuckGo Web',
+                        });
+                    }
+
+                    resolve({ ok: true, results, query });
+                } catch (e) {
+                    resolve({
+                        ok: false,
+                        results: [{
+                            title: `Cari "${query}"`,
+                            snippet: `Error parsing hasil. Buka manual: https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+                            url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+                            source: 'Fallback',
+                        }],
+                        query,
+                    });
+                }
+            });
+        }).on('error', (err) => {
+            resolve({
+                ok: false,
+                results: [{
+                    title: `Cari "${query}"`,
+                    snippet: `Network error: ${err.message}. URL manual: https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+                    url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+                    source: 'Fallback',
+                }],
+                query,
+            });
+        });
+    });
+}
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
         {
-            name: 'discover_tasks',
+            name: 'web_search',
             description:
-                'Scan semua platform $0 modal yang bisa dikerjakan AI otonom (tanpa telepon/VC). ' +
-                'Return peluang diranking $/jam. Panggil di awal sesi dan setiap ganti strategi.',
+                'Cari informasi di internet via DuckDuckGo. GUNAKAN INI untuk:\n' +
+                '- Riset platform kerja (lowongan Fastwork, Toloka, dll)\n' +
+                '- Cari strategi menghasilkan uang online\n' +
+                '- Cek informasi tentang suatu topik\n' +
+                '- Cari tutorial atau panduan\n' +
+                'Tidak butuh API key. Gratis dan bebas digunakan.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description: 'Query pencarian. Contoh: "lowongan freelance fastwork.id penulisan artikel"',
+                    },
+                    max_results: {
+                        type: 'number',
+                        description: 'Jumlah hasil maksimal (default: 5)',
+                    },
+                },
+                required: ['query'],
+            },
+        },
+        {
+            name: 'discover_tasks',
+            description: 'Scan semua platform $0 modal. Return peluang diranking $/jam.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
         {
@@ -70,19 +180,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: 'get_earnings',
-            description: 'Laporan sesi: total earned, rate $/jam, on-track, proyeksi, rekomendasi. Panggil setiap 30 menit.',
+            description: 'Laporan sesi: total earned, rate $/jam, on-track, proyeksi, rekomendasi.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
         {
             name: 'evaluate_strategy',
-            description:
-                'Evaluasi apakah strategi saat ini cukup untuk $10/8jam. ' +
-                'Jika tidak on-track setelah 30 menit, rekomendasikan platform baru yang lebih bayar.',
+            description: 'Evaluasi apakah strategi saat ini cukup. Rekomendasikan platform baru jika tidak on-track.',
             inputSchema: {
                 type: 'object',
-                properties: {
-                    current_platform: { type: 'string' },
-                },
+                properties: { current_platform: { type: 'string' } },
                 required: ['current_platform'],
             },
         },
@@ -101,9 +207,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: 'setup_platforms',
-            description:
-                'Daftar otomatis ke semua platform $0 modal via CloakBrowser. ' +
-                'Panggil SEKALI di awal jika akun belum ada.',
+            description: 'Daftar otomatis ke semua platform $0 modal via CloakBrowser.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -115,12 +219,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: 'check_user_signals',
-            description:
-                'Cek apakah ada sinyal/perintah baru dari user yang belum diproses.\n' +
-                'CATATAN: Dalam Gateway Mode, perintah user datang langsung via Telegram.\n' +
-                'Tool ini membaca FILE SINYAL sebagai backup jika ada perintah yang terlewat.\n' +
-                'Return: daftar sinyal pending (platform_ready, pause, switch, dll).\n' +
-                'Panggil ini jika kamu belum menerima update dari user dalam 15 menit.',
+            description: 'Cek sinyal/perintah dari user yang belum diproses (backup file-based).',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
         {
@@ -134,10 +233,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: 'ensure_browser',
-            description:
-                'WAJIB sebelum membuka website apapun. ' +
-                'Pastikan CloakBrowser (stealth, anti-bot) berjalan. ' +
-                'Return CDP URL untuk koneksi Playwright.',
+            description: 'Pastikan CloakBrowser (stealth, anti-bot) berjalan. Return CDP URL.',
             inputSchema: { type: 'object', properties: {}, required: [] },
         },
     ],
@@ -147,15 +243,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
-    // ── discover_tasks ───────────────────────────────────────────────────────
+    // ── web_search ────────────────────────────────────────────────────────────
+    if (name === 'web_search') {
+        const { query, max_results = 5 } = args;
+        console.error(`[MCP] web_search: "${query}"`);
+        const { ok, results } = await duckduckgoSearch(query, max_results);
+
+        const rows = results.map((r, i) =>
+            `${i + 1}. ${r.title}\n   ${r.snippet}\n   🔗 ${r.url}`
+        ).join('\n\n');
+
+        return {
+            content: [{
+                type: 'text',
+                text:
+                    `=== HASIL PENCARIAN: "${query}" ===\n\n${rows}\n\n` +
+                    `🔍 Cari lebih lanjut: https://duckduckgo.com/?q=${encodeURIComponent(query)}\n` +
+                    `Status: ${ok ? '✅ OK' : '⚠ Partial'} | ${results.length} hasil`,
+            }],
+        };
+    }
+
+    // ── discover_tasks ────────────────────────────────────────────────────────
     if (name === 'discover_tasks') {
         const opps = await taskDiscovery.discoverTasks();
         const top  = opps.slice(0, 8);
         const rows = top.map((t, i) =>
             `${i + 1}. [${t.platform}] — $${t.estimatedPayPerHour}/jam\n` +
-            `   URL: ${t.url}\n` +
-            `   Biaya join: $${t.costToJoin} (GRATIS)\n` +
-            `   Withdrawal: ${t.withdrawal || '-'}\n` +
+            `   URL: ${t.url}\n   Biaya join: $${t.costToJoin}\n` +
             `   Cara mulai: ${t.howToStart || '-'}`
         ).join('\n\n');
 
@@ -163,15 +278,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [{
                 type: 'text',
                 text:
-                    `=== PLATFORM $0 MODAL — RANKED $/JAM ===\n\n${rows}\n\n` +
-                    `SEMUA platform GRATIS untuk bergabung.\n` +
-                    `REKOMENDASI: DataAnnotation.tech ($15/jam) atau Outlier AI ($20/jam).\n\n` +
-                    `JSON lengkap:\n${JSON.stringify(opps, null, 2)}`,
+                    `=== PLATFORM $0 MODAL ===\n\n${rows}\n\n` +
+                    `🥇 PRIORITAS UTAMA: Fastwork.id (fastwork.id) — freelance Indonesia\n\n` +
+                    `JSON:\n${JSON.stringify(opps, null, 2)}`,
             }],
         };
     }
 
-    // ── complete_task ────────────────────────────────────────────────────────
+    // ── complete_task ─────────────────────────────────────────────────────────
     if (name === 'complete_task') {
         const { platform, taskId, payout, taskType = 'unknown' } = args;
         await earningsTracker.logTask(platform, taskId, payout, taskType);
@@ -182,14 +296,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text:
                     `✅ Task selesai: +$${payout} dari ${platform}\n` +
                     `📊 Sesi: ${report.sessionEarned} / ${report.sessionTarget}\n` +
-                    `⚡ Rate: ${report.currentRatePerHour}/jam (target: ${report.targetRatePerHour})\n` +
-                    `${report.statusIcon} ${report.onTrack ? 'ON TRACK ✅' : 'PERLU PERCEPATAN ⚠'}\n` +
+                    `⚡ Rate: ${report.currentRatePerHour}/jam\n` +
                     `💡 ${report.recommendation}`,
             }],
         };
     }
 
-    // ── get_earnings ─────────────────────────────────────────────────────────
+    // ── get_earnings ──────────────────────────────────────────────────────────
     if (name === 'get_earnings') {
         const report = await earningsTracker.getSessionReport();
         const byPlatform = report.earningsByPlatform
@@ -205,49 +318,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     `⚡ Rate: ${report.currentRatePerHour}/jam | Target: ${report.targetRatePerHour}\n` +
                     `📈 Proyeksi 8 jam: ${report.projectedTotal}\n` +
                     `${report.statusIcon} ${report.onTrack ? 'ON TRACK ✅' : 'KURANG DARI TARGET ⚠'}\n` +
-                    `\nPer Platform:\n${byPlatform}\n` +
-                    `\n💡 ${report.recommendation}`,
+                    `\nPer Platform:\n${byPlatform}\n\n💡 ${report.recommendation}`,
             }],
         };
     }
 
-    // ── evaluate_strategy ────────────────────────────────────────────────────
+    // ── evaluate_strategy ─────────────────────────────────────────────────────
     if (name === 'evaluate_strategy') {
         const { current_platform } = args;
         const report = await earningsTracker.getSessionReport();
         let advice = '';
-
         if (report.needStrategySwitch) {
-            const alts = [
-                { name: 'DataAnnotation.tech', url: 'https://www.dataannotation.tech', pay: 15 },
-                { name: 'Outlier AI',          url: 'https://outlier.ai',              pay: 20 },
-                { name: 'Textbroker',          url: 'https://www.textbroker.com',      pay: 4  },
-                { name: 'Scale AI',            url: 'https://scale.com/ai-tasker',     pay: 2.5 },
-            ].filter(a => a.name !== current_platform);
-
             advice =
                 `❌ GANTI PLATFORM!\n${current_platform} terlalu lambat.\n\n` +
-                `PINDAH KE: ${alts[0].name} — $${alts[0].pay}/jam\n` +
-                `URL: ${alts[0].url}\n\n` +
-                `Alternatif:\n` +
-                alts.slice(1, 3).map(a => `  • ${a.name} ($${a.pay}/jam)`).join('\n');
+                `PINDAH KE: Fastwork.id atau DataAnnotation.tech\n` +
+                `Gunakan web_search("lowongan fastwork.id") untuk riset.`;
         } else {
             advice =
                 `✅ ${current_platform} cukup baik.\n` +
                 `Rate: ${report.currentRatePerHour}/jam | Proyeksi: ${report.projectedTotal}\n` +
                 `Lanjutkan — evaluasi lagi dalam 30 menit.`;
         }
-
         return {
             content: [{
                 type: 'text',
-                text: `=== EVALUASI STRATEGI ===\nPlatform: ${current_platform}\n` +
-                      `Earned: ${report.sessionEarned} | Rate: ${report.currentRatePerHour}/jam\n\n` + advice,
+                text:
+                    `=== EVALUASI STRATEGI ===\nPlatform: ${current_platform}\n` +
+                    `Earned: ${report.sessionEarned} | Rate: ${report.currentRatePerHour}/jam\n\n` + advice,
             }],
         };
     }
 
-    // ── log_strategy_switch ──────────────────────────────────────────────────
+    // ── log_strategy_switch ───────────────────────────────────────────────────
     if (name === 'log_strategy_switch') {
         await earningsTracker.logStrategySwitch(args.from_platform, args.to_platform, args.reason);
         return {
@@ -258,42 +360,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
     }
 
-    // ── setup_platforms ──────────────────────────────────────────────────────
+    // ── setup_platforms ───────────────────────────────────────────────────────
     if (name === 'setup_platforms') {
         const { email, password } = args;
-        if (!email || !password) {
+        if (!email || !password)
             return { content: [{ type: 'text', text: '❌ Email dan password wajib.' }], isError: true };
-        }
         const results = await platformSetup.runSetup(email, password);
         const summary = Object.entries(results).map(([k, v]) => `${k}: ${v.status}`).join('\n');
         return { content: [{ type: 'text', text: `=== HASIL SETUP ===\n${summary}` }] };
     }
 
-    // ── check_user_signals ───────────────────────────────────────────────────
+    // ── check_user_signals ────────────────────────────────────────────────────
     if (name === 'check_user_signals') {
         const signals = [];
-
-        // Baca platform_accounts.json untuk platform yang baru dikonfirmasi
         const stateFile = path.join(__dirname, '..', '9router-data', 'platform_accounts.json');
         if (fs.existsSync(stateFile)) {
             const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
             for (const [platform, info] of Object.entries(state.registered || {})) {
                 if (info.confirmedByUser && info.status === 'active') {
-                    const confirmedAt = new Date(info.confirmedAt || 0);
-                    const ageMinutes  = (Date.now() - confirmedAt.getTime()) / 60_000;
-                    if (ageMinutes < 60) { // Hanya 60 menit terakhir
-                        signals.push({
-                            type: 'platform_ready',
-                            platform,
-                            message: `${platform} dikonfirmasi user — mulai kerja di sana!`,
-                            confirmedAt: info.confirmedAt,
-                        });
+                    const ageMinutes = (Date.now() - new Date(info.confirmedAt || 0).getTime()) / 60_000;
+                    if (ageMinutes < 60) {
+                        signals.push({ type: 'platform_ready', platform, message: `${platform} dikonfirmasi user!` });
                     }
                 }
             }
         }
-
-        // Baca file sinyal dari direktori signals/
         if (fs.existsSync(SIGNALS_DIR)) {
             const files = fs.readdirSync(SIGNALS_DIR).filter(f => f.endsWith('.json'));
             for (const file of files) {
@@ -303,51 +394,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     const ageMinutes = (Date.now() - new Date(data.at || 0).getTime()) / 60_000;
                     if (ageMinutes < 120) {
                         signals.push({ type: data.type || 'signal', ...data, file });
-                        // Hapus setelah dibaca
                         fs.unlinkSync(filePath);
                     }
                 } catch (_) {}
             }
         }
-
         if (signals.length === 0) {
-            return {
-                content: [{
-                    type: 'text',
-                    text:
-                        `=== SINYAL USER ===\n` +
-                        `Tidak ada sinyal baru dari user.\n\n` +
-                        `CATATAN: Dalam Gateway Mode, user berbicara langsung dengan kamu via Telegram.\n` +
-                        `Pesan masuk saat kamu bekerja akan di-inject setelah tool call berikutnya (steer mode).\n` +
-                        `Tool ini hanya untuk membaca sinyal file-based yang mungkin terlewat.`,
-                }],
-            };
+            return { content: [{ type: 'text', text: 'Tidak ada sinyal baru dari user.\nDalam Gateway Mode, user berbicara langsung via Telegram.' }] };
         }
-
-        const summary = signals.map(s =>
-            `[${s.type}] ${s.platform || ''} — ${s.message || JSON.stringify(s)}`
-        ).join('\n');
-
-        return {
-            content: [{
-                type: 'text',
-                text:
-                    `=== SINYAL DARI USER (${signals.length} baru) ===\n\n${summary}\n\n` +
-                    `AKSI YANG DIREKOMENDASIKAN:\n` +
-                    signals.filter(s => s.type === 'platform_ready').map(s =>
-                        `→ ${s.platform} siap! Buka ${s.platform} dan mulai kerja di sana.`
-                    ).join('\n'),
-            }],
-        };
+        const summary = signals.map(s => `[${s.type}] ${s.platform || ''} — ${s.message || JSON.stringify(s)}`).join('\n');
+        return { content: [{ type: 'text', text: `=== SINYAL (${signals.length} baru) ===\n\n${summary}` }] };
     }
 
-    // ── send_telegram_update ─────────────────────────────────────────────────
+    // ── send_telegram_update ──────────────────────────────────────────────────
     if (name === 'send_telegram_update') {
         await telegramNotifier.sendAlert(args.message);
         return { content: [{ type: 'text', text: '✅ Pesan Telegram terkirim.' }] };
     }
 
-    // ── ensure_browser ───────────────────────────────────────────────────────
+    // ── ensure_browser ────────────────────────────────────────────────────────
     if (name === 'ensure_browser') {
         try {
             const { cdpUrl } = await browserWatchdog.ensureRunning();
@@ -355,16 +420,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 content: [{
                     type: 'text',
                     text:
-                        `✅ CloakBrowser siap (stealth mode).\n` +
-                        `CDP URL: ${cdpUrl}\n` +
-                        `Koneksi Playwright: chromium.connect_over_cdp("${cdpUrl}")`,
+                        `✅ Browser siap.\nCDP URL: ${cdpUrl}\n` +
+                        `Koneksi: chromium.connect_over_cdp("${cdpUrl}")`,
                 }],
             };
         } catch (err) {
-            return {
-                content: [{ type: 'text', text: `❌ CloakBrowser error: ${err.message}` }],
-                isError: true,
-            };
+            return { content: [{ type: 'text', text: `❌ Browser error: ${err.message}` }], isError: true };
         }
     }
 
@@ -374,7 +435,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('[MCP] money-agent-mcp v5.0.0 siap.');
+    console.error('[MCP] money-agent-mcp v5.1.0 siap. Tool: web_search (DuckDuckGo) aktif.');
 }
 
 main().catch(err => { console.error('[MCP] Fatal:', err); process.exit(1); });
