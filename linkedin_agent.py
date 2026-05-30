@@ -99,10 +99,11 @@ class LinkedinAgent:
             "#TechFounders #VCFunding #AI #DataPipelines #Startups"
         )
         self.browser.execute_task(
-            f"Buka https://www.linkedin.com/feed/?shareActive=true secara langsung untuk membuka modal posting secara otomatis. "
-            f"Jangan mencari tombol 'Start a post' karena modal seharusnya sudah terbuka. Langsung cari elemen input (textbox) untuk mengetik. "
-            f"Ketik teks berikut ini persis ke dalam text area yang muncul:\\n\\n{pitch}\\n\\n"
-            f"Setelah mengetik, klik tombol 'Post' atau 'Posting'. "
+            f"Buka https://www.linkedin.com/feed/ secara langsung. "
+            f"Jika modal posting belum terbuka, cari dan klik tombol 'Mulai buat posting' atau 'Start a post' (misalnya div/button dengan teks tersebut). "
+            f"Setelah modal terbuka, cari elemen input atau textbox (biasanya div contenteditable atau textarea dengan placeholder 'Apa yang ingin Anda bicarakan?'). "
+            f"Langsung gunakan aksi 'type' ke elemen tersebut dengan teks berikut ini:\\n\\n{pitch}\\n\\n"
+            f"Setelah teks terisi, klik tombol 'Post' atau 'Posting'. "
             f"Jika sudah selesai memposting, gunakan aksi 'done' dengan result 'POST_SUCCESS'.",
             max_steps=8
         )
