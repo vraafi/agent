@@ -43,8 +43,8 @@ LLM_MODELS = {
 
 # Role Assignment
 
-# Default: gemma-4-31b-it (1500 RPD) — dipakai untuk semua task biasa
-DEFAULT_LLM_MODEL = "gemma-4-31b-it"
+# Default: gemini-3.1-flash-lite-preview (1.5M RPD) — dipakai untuk semua task biasa
+DEFAULT_LLM_MODEL = "gemini-3.1-flash-lite-preview"
 
 # Codegen: model terkuat untuk generate kode Python production-ready
 CODEGEN_MODEL = "gemma-4-31b-it"
