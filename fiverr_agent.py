@@ -422,6 +422,27 @@ class FiverrAgent:
             logger.warning("[Fiverr] Gagal mempublikasikan Gig. Mungkin ada mandatory field yang terlewat.")
         return success
 
+    def create_gig_from_trend(self, trend_data: dict) -> bool:
+        """
+        [MULTI-AGENT] Create a Gig dynamically based on trends received from other agents (like XAgent).
+        """
+        logger.info("[Fiverr] Menerima data trend dari agen lain: %s", trend_data.get('trend', 'Unknown'))
+        
+        # Build a template based on the trend
+        template = {
+            "niche": "trend_based",
+            "title": f"I will build a {trend_data.get('trend', 'Python Automation')} solution",
+            "category": "Programming & Tech",
+            "subcategory": "Scripts & Utilities",
+            "tags": [trend_data.get('trend', '').replace(" ", "")[:15], "python", "automation", "script", "bot"],
+            "basic": {"label": "Basic script", "desc": "Simple script for this trend", "price": 30, "days": 1, "revisions": 1},
+            "standard": {"label": "Standard app", "desc": "Full app for this trend", "price": 70, "days": 2, "revisions": 2},
+            "premium": {"label": "Premium solution", "desc": "Enterprise solution", "price": 150, "days": 4, "revisions": 999},
+            "requirements": ["Please provide the exact specifications for your task."],
+            "description_prompt": f"Write a 1000 character Fiverr gig description for a Python service solving the trending topic: '{trend_data.get('trend')}'. Keep it professional."
+        }
+        return self.create_gig(template)
+
     def search_and_offer_gigs(self) -> bool:
         """
         Aktif di Fiverr Buyer Request atau optimasi Gig ranking.

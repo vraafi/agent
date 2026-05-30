@@ -42,10 +42,9 @@ class FreelanceAgent:
             "Apakah kamu melihat salah satu dari ini: "
             "(1) foto profil / avatar pengguna di pojok kanan atas, "
             "(2) menu navigasi dengan 'Find Work' atau 'My Jobs' atau 'Messages', "
-            "(3) halaman beranda freelancer yang personal (bukan landing page publik). "
-            "PENTING: Abaikan nama URL karena Upwork sering mengganti path. "
-            "Fokus hanya pada elemen visual. "
-            "Jawab hanya 'LOGGED_IN' atau 'NOT_LOGGED_IN'.",
+            "(3) halaman beranda freelancer yang personal. "
+            "PENTING: Gunakan aksi 'done' dengan result 'LOGGED_IN' jika terlihat, "
+            "atau 'NOT_LOGGED_IN' jika tidak.",
             max_steps=3
         )
         return "LOGGED_IN" in result
@@ -69,10 +68,8 @@ class FreelanceAgent:
             f"Klik tombol login tersebut, lalu masukkan: "
             f"Email: {creds['username']} dan Password: {creds['password']}. "
             f"Setelah submit, tunggu halaman selesai load. "
-            f"Jika muncul CAPTCHA, verifikasi gambar, atau kode 2FA — "
-            f"BERHENTI dan kembalikan teks 'NEEDS_HUMAN'. "
-            f"Jika berhasil masuk dan melihat halaman akun freelancer, "
-            f"kembalikan teks 'LOGIN_SUCCESS'.",
+            f"Jika muncul CAPTCHA atau 2FA, gunakan aksi 'done' dengan result 'NEEDS_HUMAN'. "
+            f"Jika berhasil masuk, gunakan aksi 'done' dengan result 'LOGIN_SUCCESS'.",
             max_steps=10
         )
 
@@ -117,7 +114,7 @@ class FreelanceAgent:
             "Buka https://www.upwork.com/nx/search/jobs/?q=python+automation&sort=recency. "
             "Scrape 8 job pertama. Untuk setiap job ambil: title, deskripsi singkat (200 karakter), "
             "dan URL lengkap job tersebut. "
-            "Return sebagai JSON array: [{title, description, url}, ...]",
+            "Gunakan aksi 'done' dengan result berupa JSON array: [{title, description, url}, ...]",
             max_steps=15
         )
         try:

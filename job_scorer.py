@@ -41,6 +41,14 @@ RED_FLAG_KEYWORDS = {
     "i have no budget", "low budget", "cheap", "very small",
 }
 
+# Kata kunci SYNC/INTERVIEW — WAJIB HINDARI (100% Deal-breaker)
+SYNC_RED_FLAG_KEYWORDS = {
+    "zoom", "interview", "video call", "voice call", "google meet",
+    "teams call", "live interview", "skype", "face-to-face", "face to face",
+    "screen share", "phone call", "phone screen", "real-time alignment",
+    "on-call", "sync meeting", "live discussion"
+}
+
 # Niche target kita (berdasarkan skill library)
 TARGET_NICHES = [
     "web scraping", "automation", "data processing", "api integration",
@@ -199,11 +207,18 @@ class JobScorer:
 
         # Konversi ke estimated hourly jika fixed
         job_type = job_data.get("job_type", "fixed").lower()
-        if "hourly" in job_type or "hour" in job_type:
+        desc_lower = (job_data.get("description", "") + job_data.get("title", "")).lower()
+        
+        is_hourly = ("hourly" in job_type or "hour" in job_type or 
+                     "contract" in job_type or
+                     ("/hr" in desc_lower and budget < 200) or
+                     ("/hour" in desc_lower and budget < 200) or
+                     ("per hour" in desc_lower and budget < 200))
+        
+        if is_hourly:
             hourly = budget
         else:
             # Asumsi fixed price job: estimasi 5-20 jam
-            desc_lower = (job_data.get("description", "") + job_data.get("title", "")).lower()
             estimated_hours = 20 if "complex" in desc_lower or "large" in desc_lower else 10
             hourly = budget / estimated_hours
 
@@ -322,8 +337,18 @@ class JobScorer:
         return float(score)
 
     def _check_red_flags(self, job_data: dict, details: dict) -> float:
-        """Cek red flags dan berikan penalty (0-50 points deduction)."""
+        """Cek red flags dan berikan penalty (0-50 points deduction, or 1000 for sync block)."""
         text = f"{job_data.get('title', '')} {job_data.get('description', '')}".lower()
+        
+        # Check absolute deal-breaker synchronous requirements
+        sync_flags = [kw for kw in SYNC_RED_FLAG_KEYWORDS if kw in text]
+        if sync_flags:
+            details["sync_flags"] = sync_flags
+            details["red_flags"] = sync_flags
+            details["red_flag_penalty"] = 1000.0
+            logger.info("[JobScorer] 🚫 SYNC RED FLAGS DETECTED: %s. Strictly skipping.", sync_flags)
+            return 1000.0
+            
         flags_found = [kw for kw in RED_FLAG_KEYWORDS if kw in text]
         penalty = min(50, len(flags_found) * 15)
 
@@ -361,16 +386,59 @@ class JobScorer:
     # ─── HELPERS ───────────────────────────────────────────────────────────────
 
     def _parse_budget(self, job_data: dict) -> float:
-        """Parse budget dari berbagai format."""
+        """Parse budget dari berbagai format, termasuk regex scan di description jika key default tidak ada."""
+        # 1. Coba dari key default dulu
         for key in ("budget", "rate", "budget_min", "budget_max"):
             val = job_data.get(key, 0)
             if val:
                 try:
                     # Remove currency symbols and commas
                     cleaned = re.sub(r"[^\d.]", "", str(val))
-                    return float(cleaned) if cleaned else 0.0
+                    if cleaned and float(cleaned) > 0:
+                        return float(cleaned)
                 except (ValueError, TypeError):
                     continue
+        
+        # 2. Jika tidak ada, scan description body untuk hourly rates
+        desc = job_data.get("description", "")
+        if desc:
+            # Cari pola seperti "$30/hr", "25 USD/hr", "$15 - $75/hr", "$40/hour", "$35 - $50 per hour"
+            # Coba cari rentang atau angka tunggal
+            # Pola 1: $X - $Y /hr atau hour
+            range_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*[-–—]\s*\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:/|per\s+)?(?:hr|hour|h\b)", desc, re.IGNORECASE)
+            if range_matches:
+                # Ambil nilai maksimal untuk melihat potensi tertinggi dari job tersebut (sesuai filosofi Evan Fisher)
+                try:
+                    val_max = float(range_matches[0][1].replace(",", ""))
+                    return val_max
+                except Exception:
+                    pass
+            
+            # Pola 2: X USD/hr - Y USD/hr
+            usd_range_matches = re.findall(r"(\d{1,3})\s*USD/hr\s*[-–—]\s*(\d{1,3})\s*USD/hr", desc, re.IGNORECASE)
+            if usd_range_matches:
+                try:
+                    val_max = float(usd_range_matches[0][1])
+                    return val_max
+                except Exception:
+                    pass
+
+            # Pola 3: $X / hr atau hour
+            single_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:/|per\s+)?(?:hr|hour|h\b)", desc, re.IGNORECASE)
+            if single_matches:
+                try:
+                    return float(single_matches[0].replace(",", ""))
+                except Exception:
+                    pass
+
+            # Pola 4: X USD/hr
+            usd_single_matches = re.findall(r"(\d{1,3})\s*USD/hr", desc, re.IGNORECASE)
+            if usd_single_matches:
+                try:
+                    return float(usd_single_matches[0])
+                except Exception:
+                    pass
+
         return 0.0
 
     def _get_recommendation(self, score: float) -> str:

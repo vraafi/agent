@@ -236,50 +236,54 @@ class GemmaDirectCaller:
         payload = {
             "contents": [{"role": "user", "parts": parts}],
             "generationConfig": {
-                "temperature": 0.0,
-                "maxOutputTokens": 1024,
-                "stopSequences": ["}"]
+                "temperature": 0.1,
+                "maxOutputTokens": 1024
             }
         }
 
-        for attempt in range(len(self.api_keys)):
-            key = self.api_keys[self.current_key_idx]
-            try:
-                resp = requests.post(
-                    f"{self.base_url}?key={key}",
-                    headers={"Content-Type": "application/json"},
-                    json=payload,
-                    timeout=self.timeout
-                )
-                
-                if resp.status_code == 200:
-                    candidates = resp.json().get("candidates", [])
-                    if candidates:
-                        parts_resp = candidates[0].get("content", {}).get("parts", [])
-                        if parts_resp:
-                            text = parts_resp[0].get("text", "")
-                            if text and not text.strip().endswith("}"):
-                                text = text.strip() + "}"
-                            return text
-                    return None
+        total_keys = len(self.api_keys)
+        for retry_cycle in range(3):
+            for attempt in range(total_keys):
+                key = self.api_keys[self.current_key_idx]
+                try:
+                    resp = requests.post(
+                        f"{self.base_url}?key={key}",
+                        headers={"Content-Type": "application/json"},
+                        json=payload,
+                        timeout=self.timeout
+                    )
                     
-                elif resp.status_code in (403, 429, 500, 503):
-                    logger.warning("[GemmaDirect] Key index %d error %d. Merotasi...", 
-                                   self.current_key_idx, resp.status_code)
+                    if resp.status_code == 200:
+                        candidates = resp.json().get("candidates", [])
+                        if candidates:
+                            parts_resp = candidates[0].get("content", {}).get("parts", [])
+                            if parts_resp:
+                                text = parts_resp[0].get("text", "")
+                                if text and not text.strip().endswith("}"):
+                                    text = text.strip() + "}"
+                                return text
+                        return None
+                        
+                    elif resp.status_code in (403, 429, 500, 503):
+                        logger.warning("[GemmaDirect] Key index %d error %d. Merotasi...", 
+                                       self.current_key_idx, resp.status_code)
+                        self._rotate_key()
+                        if resp.status_code == 429:
+                            time.sleep(2) # Jeda sebentar jika rate limit
+                        continue
+                    else:
+                        logger.error("[GemmaDirect] API error %d: %s",
+                                     resp.status_code, resp.text[:200])
+                        return None
+                        
+                except Exception as e:
+                    logger.error("[GemmaDirect] Request error dengan key %d: %s", 
+                                 self.current_key_idx, e)
                     self._rotate_key()
-                    if resp.status_code == 429:
-                        time.sleep(2) # Jeda sebentar jika rate limit
-                    continue
-                else:
-                    logger.error("[GemmaDirect] API error %d: %s",
-                                 resp.status_code, resp.text[:200])
-                    return None
-                    
-            except Exception as e:
-                logger.error("[GemmaDirect] Request error dengan key %d: %s", 
-                             self.current_key_idx, e)
-                self._rotate_key()
-                
+            
+            logger.warning("[GemmaDirect] Semua API key gagal di siklus %d/3. Menunggu 30 detik sebelum mencoba lagi...", retry_cycle + 1)
+            time.sleep(30)
+            
         return None
 
 
@@ -406,9 +410,25 @@ class GemmaDirectAgent:
                 "Accept-Language": "en-US,en;q=0.9"
             })
 
+            # Lacak tab baru yang dibuka oleh aksi agent secara real-time
+            opened_pages = []
+            page.context.on("page", lambda p: opened_pages.append(p))
+
             # Loop aksi nyata
             result_msg = "FAILED: Max steps reached"
             for step in range(1, self.max_steps + 1):
+                # AUTO-SWITCH TAB: Jika ada tab baru yang terbuka akibat aksi agent, otomatis beralih ke tab terbaru
+                if opened_pages:
+                    new_page = opened_pages[-1]
+                    try:
+                        await new_page.wait_for_load_state("load", timeout=10000)
+                        await new_page.bring_to_front()
+                        page = new_page
+                        logger.info("[GemmaDirect] 🔄 Beralih ke tab baru yang dibuka oleh aksi: %s", page.url[:60])
+                        opened_pages.clear()
+                    except Exception as tab_err:
+                        logger.debug("Gagal bring tab to front: %s", tab_err)
+
                 url = page.url
                 logger.info("[GemmaDirect] Step %d | URL: %s", step, url[:60])
 
@@ -570,8 +590,8 @@ class GemmaDirectAgent:
                 el = elements[index]
                 await el.scroll_into_view_if_needed()
                 try:
-                    # Coba klik standar Playwright
-                    await el.click(timeout=3000)
+                    # Coba klik standar Playwright dengan force=True agar bypass actionability checks
+                    await el.click(force=True, timeout=3000)
                 except Exception as click_exc:
                     logger.warning("[GemmaDirectAgent] Standard click failed, retrying via DOM JS evaluation: %s", click_exc)
                     # Fallback ke JS-based click jika standar gagal (anti-bot/CDP coordinate mismatch)
@@ -591,8 +611,8 @@ class GemmaDirectAgent:
                 el = elements[index]
                 try:
                     # Coba input standar Playwright
-                    await el.click(timeout=3000)
-                    await el.fill(text)
+                    await el.click(force=True, timeout=3000)
+                    await el.fill(text, force=True)
                 except Exception as type_exc:
                     logger.warning("[GemmaDirectAgent] Standard fill failed, retrying via DOM JS value injection: %s", type_exc)
                     # Fallback ke direct DOM value injection + dispatch events
@@ -606,14 +626,23 @@ class GemmaDirectAgent:
         if not raw:
             return None
             
-        # Bersihkan markdown dan teks sebelum/sesudah JSON
         clean_raw = raw.strip()
         
-        # Cari JSON object dengan regex yang lebih agresif
+        # 1. Cari blok ```json ... ``` (Sangat umum untuk mode thinking)
         try:
-            match = re.search(r'(\{.*\})', raw, re.DOTALL)
+            json_block = re.search(r'```(?:json)?(.*?)```', raw, re.DOTALL | re.IGNORECASE)
+            if json_block:
+                data = json.loads(json_block.group(1).strip())
+                if "action" in data: return data
+        except:
+            pass
+
+        # 2. Cari JSON object dengan regex curly braces jika tidak ada markdown block
+        try:
+            # Non-greedy match for the outermost braces if possible, or greedy fallback
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
             if match:
-                data = json.loads(match.group(1))
+                data = json.loads(match.group(0))
                 if "action" in data: return data
         except:
             pass
@@ -648,7 +677,9 @@ class GemmaDirectAgent:
             return {"action": "navigate", "params": {"url": target_url}, "reasoning": "Text extraction"}
 
         if "done" in raw_l or "success" in raw_l:
-             return {"action": "done", "params": {"result": "Finished"}, "reasoning": "Text extraction"}
+            res_match = re.search(r'["\']result["\']\s*:\s*["\'](.*?)["\']', raw)
+            res_val = res_match.group(1) if res_match else "Finished"
+            return {"action": "done", "params": {"result": res_val}, "reasoning": "Text extraction"}
 
         return None
 

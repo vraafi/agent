@@ -657,15 +657,15 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ─────────────────────────────────────────────────────────────────────────────
 st.sidebar.markdown("""
 <div style='text-align: center; padding: 5px 0;'>
-    <h2 style='color: #00f2fe; margin-bottom: 5px; font-size: 1.4rem;'>⚙️ Sistem Kontrol</h2>
+    <h2 style='color: #00f2fe; margin-bottom: 5px; font-size: 1.4rem;'>⚙️ Control System</h2>
     <p style='color: #94a3b8; font-size: 0.8rem;'>Configure model parameters and key gates below.</p>
 </div>
 <hr style='margin-top: 0; border-color: #334155;'>
 """, unsafe_allow_html=True)
 
-st.sidebar.markdown("### 🛠️ 1. Konfigurasi AI Gateway")
+st.sidebar.markdown("### 🛠️ 1. AI Gateway Configuration")
 provider_selection = st.sidebar.selectbox(
-    "Pilih Provider AI",
+    "Select AI Provider",
     options=["Google AI Studio", "OpenAI", "Anthropic", "OpenRouter"],
     help="Select the AI brain for the chatbot and ad campaign analyzer."
 )
@@ -673,34 +673,34 @@ provider_selection = st.sidebar.selectbox(
 # Dynamic Model Selection based on verified 2026 active releases
 if provider_selection == "Google AI Studio":
     model_selection = st.sidebar.selectbox(
-        "Pilih Model Gemini/Gemma (Terbaru 2026)",
+        "Select Gemini/Gemma Model (2026 Releases)",
         options=["gemma-4-31b-it", "gemma-4-26b-a4b-it", "gemini-3.1-pro", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemma-2-27b-it"],
         index=0,
         help="Google Gemma 4 & Gemini 3.1 Pro/Flash models."
     )
 elif provider_selection == "OpenAI":
     model_selection = st.sidebar.selectbox(
-        "Pilih Model GPT (Terbaru 2026)",
+        "Select GPT Model (2026 Releases)",
         options=["gpt-5.5", "gpt-5.4-thinking", "gpt-5.4-mini", "o3-mini", "gpt-4o"],
         index=0,
         help="OpenAI GPT-5.5 Flagship & GPT-5.4 Reasoning models."
     )
 elif provider_selection == "Anthropic":
     model_selection = st.sidebar.selectbox(
-        "Pilih Model Claude (Terbaru 2026)",
+        "Select Claude Model (2026 Releases)",
         options=["claude-4.7-opus", "claude-3.7-sonnet", "claude-3.5-haiku"],
         index=0,
         help="Anthropic Claude 4.7 Opus released on April 16, 2026."
     )
 elif provider_selection == "OpenRouter":
     model_selection = st.sidebar.selectbox(
-        "Pilih Model OpenRouter (Terbaru 2026)",
+        "Select OpenRouter Model (2026 Releases)",
         options=["openai/gpt-5.5", "google/gemini-3.1-pro", "anthropic/claude-4.7-opus", "deepseek/deepseek-r1", "meta-llama/llama-3.3-70b-instruct"],
         index=0
     )
 
 auth_key_input = st.sidebar.text_input(
-    "API Key / Sandi Tamu",
+    "API Key / Guest Access",
     value="nexus_guest",
     type="password",
     help="Enter chosen API Key. For guest mode using our rotated Gemini keys, enter 'nexus_guest'."
@@ -708,7 +708,7 @@ auth_key_input = st.sidebar.text_input(
 
 # Active Database Selector
 db_selection = st.sidebar.selectbox(
-    "Pilih Database Meta",
+    "Select Meta Knowledge Base",
     options=["Full Enterprise Hub Context", "Llama 4 Open Source Ecosystem", "Click-to-WhatsApp Conversion Engine", "Meta Spatial Computing specs"],
     index=0,
     help="Prioritizes specific parts of Meta's 2026 knowledge base."
@@ -719,12 +719,12 @@ st.session_state["model"] = model_selection
 
 # Visual status badge
 if auth_key_input == "nexus_guest":
-    st.sidebar.success("💡 **Mode Aktif**: Google Gemini (Gratis 10 Pertanyaan menggunakan API Key Agensi!)")
+    st.sidebar.success("💡 **Active Mode**: Google Gemini (Free 10 Questions via Agency API Key!)")
 else:
-    st.sidebar.info(f"💡 **Model Aktif**: {model_selection} ({provider_selection}) via Kunci API Pribadi")
+    st.sidebar.info(f"💡 **Active Model**: {model_selection} ({provider_selection}) via Private API Key")
 
 # MOCK AGENTS.MD RESOURCE HEALTH MONITOR
-st.sidebar.markdown("<br>### 📊 2. Status Server (AGENTS.md)", unsafe_allow_html=True)
+st.sidebar.markdown("<br>### 📊 2. Server Status (AGENTS.md)", unsafe_allow_html=True)
 st.sidebar.markdown("""
 <div class='health-widget'>
     🖥️ CPU Usage: 42.4% (Limit: 90%) <br>
@@ -739,19 +739,19 @@ st.sidebar.markdown("""
 # MAIN TABS: TAB 1 CHAT SIMULATOR | TAB 2 AD OPTIMIZER PIPELINE | TAB 3 LIVE TEST
 # ─────────────────────────────────────────────────────────────────────────────
 tab_chat, tab_agents, tab_test = st.tabs([
-    "💬 TAB 1: Meta AI Chatbot Simulator (Tanya Jawab Otonom)",
+    "💬 TAB 1: Meta AI Chatbot Simulator (Autonomous QA)",
     "⚙️ TAB 2: Meta Ad Conversion Optimizer (Multi-Agent Pipeline)",
-    "🧪 TAB 3: Agent Live Sandbox (Uji Coba Agen Otonom)"
+    "🧪 TAB 3: Agent Live Sandbox (Autonomous Agent Suite)"
 ])
 
 # --- TAB 1: INTERACTIVE META CHATBOT ---
 with tab_chat:
     st.markdown(f"""
     <div class='gradient-box'>
-        <h4>Uji Otonom: Meta Platforms AI Assistant (Model: <b>{model_selection}</b>)</h4>
+        <h4>Autonomous Test: Meta Platforms AI Assistant (Model: <b>{model_selection}</b>)</h4>
         <p style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 0;'>
-            Meta AI Assistant ini dilengkapi basis pengetahuan detail tentang Llama 4, ad ROAS, Ray-Ban Meta glasses, Quest Horizon OS, dan WhatsApp Business API. 
-            Silakan ajukan pertanyaan apa pun mengenai produk dan strategi Meta!
+            This Meta AI Assistant is equipped with a deep knowledge base regarding Llama 4, ad ROAS, Ray-Ban Meta glasses, Quest Horizon OS, and WhatsApp Business API. 
+            Feel free to ask any questions about Meta's enterprise solutions and strategies!
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -759,7 +759,7 @@ with tab_chat:
     # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "assistant", "content": "Halo! Saya adalah Meta Enterprise AI Assistant. Tanyakan apa saja tentang ekosistem teknologi, kecerdasan buatan, atau cara menaikkan ad ROAS Anda di WhatsApp Business!"}
+            {"role": "assistant", "content": "Hello! I am the Meta Enterprise AI Assistant. Ask me anything about our technological ecosystem, artificial intelligence, or how we scale ad ROAS via WhatsApp Business API integrations!"}
         ]
 
     # Render history
@@ -768,7 +768,7 @@ with tab_chat:
             st.write(msg["content"])
 
     # Handle user query
-    if user_query := st.chat_input("Tanyakan apa saja (contoh: Bagaimana menaikkan ad ROAS butik kami? atau Llama 4 specs...)"):
+    if user_query := st.chat_input("Ask anything (e.g., How to increase ad ROAS for luxury fashion? or Llama 4 technical specs...)"):
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
             st.write(user_query)
@@ -788,16 +788,17 @@ with tab_chat:
             injected_knowledge = META_KNOWLEDGE_BASE[db_key]
             
             system_prompt = f"""
-            Anda adalah **Meta AI Enterprise Assistant**, representasi AI resmi dari divisi Enterprise Meta Platforms yang dikembangkan oleh agensi Nexus DualBrain AI.
+            You are the **Meta AI Enterprise Assistant**, the official AI representative of Meta Platforms' Enterprise Division, developed by Nexus DualBrain AI.
             
-            **KATEGORI PRIORITAS DATABASE DILETAKKAN DI SINI**:
+            **DATABASE PRIORITIZATION CATEGORY INJECTED HERE**:
             {injected_knowledge}
             
-            **ATURAN UTAMA KOMUNIKASI**:
-            1. Jawablah setiap pertanyaan klien dengan sangat detail, profesional, berwibawa, dan sarat wawasan teknis/bisnis yang mendalam.
-            2. Gunakan bahasa Indonesia yang elegan dan profesional (atau campur istilah Inggris jika dirasa cocok untuk audiens bisnis).
-            3. Fokus pada penawaran solusi bernilai tinggi. Jika ditanya cara optimasi penjualan atau ads, hubungkan langsung dengan pengaktifan 'AI Shopping & Styling Concierge' di WhatsApp API butik mereka untuk memangkas Fit Anxiety dan meningkatkan ad ROAS hingga 35%.
-            4. Sebutkan bahwa model Anda saat ini didukung oleh model '{model_selection}' yang diakses secara otonom melalui AI Gateway agensi.
+            **CORE PROTOCOLS & COMMUNICATION SLA**:
+            1. Respond to every enterprise inquiry with granular, authoritative, and deep technical/business insights. Maintain a high-end, premium B2B tone.
+            2. Use sophisticated B2B English. Be direct and outcomes-oriented. Avoid needy or apologetic phrasing.
+            3. Prioritize high-value solutions. If asked about scaling sales, traffic, or ad performance, immediately cross-reference the activation of the 'AI Shopping & Styling Concierge' on the client's WhatsApp Business API. Highlight how this mitigates "fit anxiety", cuts user friction, and drives a quantitative +35% ROAS lift.
+            4. Mention that you are currently powered by the '{model_selection}' model, running autonomously via the agency's unified AI Gateway.
+            5. Incorporate strict asynchronous B2B workflow expectations: encourage the client to submit their structured brief for full systems analysis instead of booking manual calls.
             """
             
             full_prompt = f"{system_prompt}\n\nUser Question: {user_query}"
@@ -814,38 +815,38 @@ with tab_chat:
 with tab_agents:
     st.markdown(f"""
     <div class='gradient-box'>
-        <h4>Uji Otonom: Meta Ads Campaign Optimizer (Multi-Agent Setup)</h4>
+        <h4>Autonomous Test: Meta Ads Campaign Optimizer (Multi-Agent Setup)</h4>
         <p style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 0;'>
-            Gunakan input parameter di bawah untuk memicu pipeline 3-Agent otonom (Researcher ➡️ ROAS Analyst ➡️ Ad Copywriter) untuk mendesain kampanye Meta Ad & WhatsApp Concierge dengan performa konversi maksimal untuk bisnis Anda!
+            Trigger our autonomous 3-Agent pipeline (Researcher ➡️ ROAS Analyst ➡️ Ad Copywriter) to engineer a high-performing Meta Ad & WhatsApp Concierge campaign designed for maximum conversion lift!
         </p>
     </div>
     """, unsafe_allow_html=True)
     
     col_ag1, col_ag2 = st.columns(2)
     with col_ag1:
-        niche_input_main = st.text_input("Industri/Niche Bisnis Target", value="Boutique Luxury Fashion", key="n_in_m")
+        niche_input_main = st.text_input("Target Industry / Business Niche", value="Boutique Luxury Fashion", key="n_in_m")
     with col_ag2:
-        target_loc = st.text_input("Target Lokasi Iklan", value="Singapore", key="loc_in_m")
+        target_loc = st.text_input("Target Ad Location", value="Singapore", key="loc_in_m")
         
-    run_pipeline = st.button("🚀 JALANKAN METAPROFILE OPTIMIZER PIPELINE", key="btn_pipeline")
+    run_pipeline = st.button("🚀 RUN METAPROFILE OPTIMIZER PIPELINE", key="btn_pipeline")
     
     if run_pipeline:
         if not is_authorized(auth_key_input, provider_selection):
-            st.error("❌ Kunci Otorisasi salah. Harap masukkan API key yang valid atau gunakan 'nexus_guest'.")
+            st.error("❌ Invalid authorization key. Please enter a valid API key or use 'nexus_guest'.")
         else:
             gemini_key = get_rotated_gemini_key(auth_key_input)
             if not gemini_key and auth_key_input != "nexus_guest":
                 gemini_key = auth_key_input
             if not gemini_key:
-                st.error("❌ Kunci API Agensi tidak tersedia saat ini. Sila masukkan API Key manual di sidebar.")
+                st.error("❌ Agency API Key unavailable. Please enter your API key manually in the sidebar.")
             else:
                 st.write("---")
-                st.subheader("🖥️ Monitor Konsol Otonom (Live Terminal Logs)")
+                st.subheader("🖥️ Autonomous Console Monitor (Live Terminal Logs)")
                 log_placeholder = st.empty()
                 
                 # 1. JALANKAN RESEARCHER
                 competitors = run_agent_researcher(f"{niche_input_main} {target_loc}", num_leads=3, log_placeholder=log_placeholder)
-                st.success("📂 Agent 1: Competitor Campaign Research Berhasil!")
+                st.success("📂 Agent 1: Competitor Campaign Research Completed!")
                 st.dataframe(competitors, use_container_width=True)
                 
                 # 2. JALANKAN ANALYST
@@ -859,45 +860,45 @@ with tab_agents:
                 st.markdown(f"<span class='agent-badge agent-3-badge'>Agent 3: The Creative Copywriter</span>", unsafe_allow_html=True)
                 creative_ad_copies = run_agent_copywriter(niche_input_main, competitors[0]["url"] if competitors else "https://example.com", analysis_result, gemini_key, log_placeholder=log_placeholder)
                 
-                st.success("✉️ Agent 3: High-ROAS Meta Ad Copies Berhasil Dihasilkan!")
+                st.success("✉️ Agent 3: High-ROAS Meta Ad Copies Successfully Generated!")
                 st.markdown("<div class='ad-container'>" + creative_ad_copies + "</div>", unsafe_allow_html=True)
 
 # --- TAB 3: CUSTOM SANDBOX TEST SUITE ---
 with tab_test:
     st.markdown("""
     <div class='gradient-box'>
-        <h4>🧪 Sandbox Pengujian Agen Otonom (Live Sandbox Suite)</h4>
+        <h4>🧪 Autonomous Agent Live Sandbox (Live Sandbox Suite)</h4>
         <p style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 0;'>
-            Tab khusus ini dibangun untuk menguji performa 3-Agent secara sekuensial dan otonom menggunakan instruksi mendalam Anda. 
-            Masukkan instruksi terperinci untuk masing-masing agen di bawah ini untuk melihat mereka merumuskan output berkualitas tinggi secara real-time!
+            This dedicated playground is built to test 3-Agent systems sequentially and autonomously based on your custom prompts. 
+            Provide granular inputs below to watch the agents collaborate and output premium strategies in real-time!
         </p>
     </div>
     """, unsafe_allow_html=True)
 
     col_t1, col_t2 = st.columns([2, 1])
     with col_t1:
-        st.markdown("##### 📝 1. Tinjau Input Pertanyaan/Instruksi Pengujian")
+        st.markdown("##### 📝 1. Sandbox Prompts & Target Directives")
         researcher_prompt = st.text_area(
-            "Prompt untuk Agent 1: The Researcher",
-            value='Researcher, kumpulkan seluruh data mentah dan valid mengenai Meta per minggu ketiga Mei 2026. Fokus pada detail restrukturisasi internal (pemindahan 7.000 karyawan ke divisi Applied AI Engineering dan Agent Transformation Accelerator), rincian PHK massal 8.000 karyawan yang baru dieksekusi global (termasuk dampak di APAC), serta rilis fitur terbaru di Instagram, WhatsApp, dan peningkatan masa retensi data iklan (Audience Retention Window) menjadi 730 hari. Berikan datanya dalam bentuk poin-poin tanpa opini.',
+            "Agent 1 Prompt: The Researcher",
+            value='Researcher, compile all raw and verified data regarding Meta Platforms as of May 2026. Focus specifically on internal restructuring details (the reallocation of 7,000 engineers to the Applied AI Engineering and Agent Transformation Accelerator divisions), the macro restructuring of 8,000 operational roles executed globally (including specific impact on the APAC region), and the latest feature rollouts across Instagram, WhatsApp, and the extension of the digital advertising Audience Retention Window to 730 days. Output this data cleanly as structured bullet points without personal speculation or opinion.',
             height=120
         )
         
         analyst_prompt = st.text_area(
-            "Prompt untuk Agent 2: The Analyst",
-            value='Analyst, berdasarkan data efisiensi biaya Meta Mei 2026—di mana mereka memotong 8.000 peran operasional namun menginvestasikan USD 115M–135M untuk infrastruktur AI dan membentuk unit otonom—bagaimana analisis kamu mengenai pergeseran model bisnis Meta? Analisis juga dampak fitur Parental AI Supervision terbaru pada tingkat retensi pengguna remaja (Gen Z/Alpha), serta bagaimana perpanjangan retensi data iklan ke 730 hari memengaruhi peta persaingan digital ad mereka melawan Google.',
+            "Agent 2 Prompt: The Analyst",
+            value='Analyst, based on Meta\'s May 2026 restructuring data—where they downsized 8,000 operational roles while scaling AI infrastructure investments to USD 115M–135M to form autonomous operational units—provide a strategic assessment of Meta\'s shifting business model. Evaluate the impact of the new Parental AI Supervision suite on Gen Z/Alpha user retention rates, and analyze how extending the ad retention window to 730 days reshapes their digital ad-tech competitive advantage against Google.',
             height=120
         )
         
         copywriter_prompt = st.text_area(
-            "Prompt untuk Agent 3: The Copywriter",
-            value='Copywriter, buatlah 3 variasi konten berdasarkan situasi Meta saat ini:\n\n1. Sebuah Press Release internal yang menenangkan namun memotivasi karyawan pasca-restrukturisasi AI Mei 2026.\n\n2. Naskah Copywriting Iklan B2B di LinkedIn yang menargetkan para pengiklan/agensi, menyoroti fitur optimasi iklan terbaru (retensi 730 hari dan integrasi asisten Meta AI).\n\n3. Utas kreatif (Thread/X) yang edukatif dan ramah keluarga untuk memperkenalkan fitur baru Parental Controls pada Meta AI agar orang tua merasa aman.',
+            "Agent 3 Prompt: The Copywriter",
+            value='Copywriter, draft 3 premium creative outputs based on Meta\'s current May 2026 corporate status:\n\n1. An internal Press Release tailored to reassure and motivate employees post-AI-engineering transition.\n\n2. A high-converting LinkedIn B2B ad targeting corporate advertisers/agencies, highlighting the 730-day retention window and integrated Meta AI agents.\n\n3. An engaging, family-friendly X/Twitter thread introducing the parental control suite on Meta AI to build trust with users.',
             height=150
         )
     
     with col_t2:
-        st.markdown("##### ⚙️ 2. Parameter Eksekusi Sandbox")
-        test_provider = st.selectbox("Provider Sandbox", options=["Google AI Studio", "OpenAI", "Anthropic", "OpenRouter"], key="t_prov")
+        st.markdown("##### ⚙️ 2. Sandbox Execution Parameters")
+        test_provider = st.selectbox("Sandbox AI Provider", options=["Google AI Studio", "OpenAI", "Anthropic", "OpenRouter"], key="t_prov")
         
         if test_provider == "Google AI Studio":
             test_model = st.selectbox("Model Sandbox", options=["gemini-3.1-pro", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash"], key="t_mod")
@@ -908,25 +909,25 @@ with tab_test:
         elif test_provider == "OpenRouter":
             test_model = st.selectbox("Model Sandbox", options=["google/gemini-3.1-pro", "openai/gpt-5.5", "anthropic/claude-4.7-opus"], key="t_mod")
             
-        test_key = st.text_input("Kunci API Sandbox", value="nexus_guest", type="password", key="t_key")
+        test_key = st.text_input("Sandbox Authorization Key", value="nexus_guest", type="password", key="t_key")
         
-        st.info("💡 Klik tombol di bawah untuk menjalankan pengujian live. Terminal di bawah akan memproses input secara real-time.")
+        st.info("💡 Click the button below to initiate the live sandbox test. The autonomous console will stream step-by-step logs in real-time.")
 
-    run_sandbox_test = st.button("🧪 JALANKAN PENGUJIAN AGEN OTONOM", key="btn_run_sandbox")
+    run_sandbox_test = st.button("🧪 RUN AUTONOMOUS SANDBOX EXECUTION", key="btn_run_sandbox")
 
     if run_sandbox_test:
         if not is_authorized(test_key, test_provider):
-            st.error("❌ Kunci otorisasi sandbox salah. Silakan gunakan 'nexus_guest' atau masukkan kunci API valid Anda.")
+            st.error("❌ Invalid authorization key. Use 'nexus_guest' or enter your valid platform API key.")
         else:
             resolved_key = get_rotated_gemini_key(test_key)
             if not resolved_key and test_key != "nexus_guest":
                 resolved_key = test_key
                 
             if not resolved_key:
-                st.error("❌ Kunci API Agensi tidak tersedia. Masukkan kunci API manual di kolom parameter.")
+                st.error("❌ Agency API Key unavailable. Please provide your manual API key in the execution panel.")
             else:
                 st.write("---")
-                st.subheader("🖥️ Monitor Konsol Otonom Sandbox (Live Step-by-Step logs)")
+                st.subheader("🖥️ Autonomous Sandbox Console Monitor (Live Step-by-Step logs)")
                 s_log = st.empty()
                 
                 logs_t = []
@@ -936,99 +937,99 @@ with tab_test:
                     time.sleep(0.5)
                 
                 # STEP 1: RUN RESEARCHER
-                add_s_log("🚀 <b>[Agent 1 - The Researcher]</b> Mengaktifkan modul penelitian otonom...")
-                add_s_log("🌐 Mencari artikel berita, lembar fakta korporasi, dan rilis pers internal Meta per Mei 2026...")
-                add_s_log("📥 Mengekstrak data restrukturisasi internal (7.000 karyawan ke divisi Applied AI & Agent Accelerator)...")
-                add_s_log("📥 Mengekstrak detail PHK 8.000 karyawan (terutama dampak restrukturisasi di APAC)...")
-                add_s_log("📥 Mengekstrak fitur retensi iklan 730 hari & Parental AI Supervision...")
+                add_s_log("🚀 <b>[Agent 1 - The Researcher]</b> Initializing autonomous research module...")
+                add_s_log("🌐 Querying financial filings, corporate fact sheets, and Meta internal press releases as of May 2026...")
+                add_s_log("📥 Extracting internal engineering restructuring data (7,000 engineers transitioned to Applied AI & Agent Accelerator)...")
+                add_s_log("📥 Parsing global layoffs details of 8,000 roles (including regional impact across APAC)...")
+                add_s_log("📥 Retrieving 730-day Audience Retention Window features & parental supervision AI updates...")
                 
                 researcher_full_prompt = f"""
-                Kamu adalah **Agent 1: The Researcher** (Terinspirasi oleh gpt-researcher).
-                Tugasmu adalah memenuhi instruksi riset berikut dengan sangat presisi, mengumpulkan seluruh fakta valid (Mei 2026), menyajikannya secara detail dalam bentuk poin-poin tanpa opini/interpretasi pribadi.
+                You are **Agent 1: The Researcher** (Inspired by gpt-researcher).
+                Your task is to execute the following research instructions with high precision, compiling all verified factual points (as of May 2026), and presenting them in granular detail without personal opinions or interpretations.
                 
-                **Berikut adalah Dokumen Fakta Internal Perusahaan (May 2026)**:
+                **Meta Corporate Facts & Knowledge Base (May 2026)**:
                 {META_KNOWLEDGE_BASE["full"]}
                 
-                **Instruksi Riset**:
+                **Research Instructions**:
                 {researcher_prompt}
                 
-                Sajikan seluruh fakta dalam format markdown yang bersih, dengan sitasi bersumber dari fakta internal.
+                Present all facts in clean markdown formatting with explicit source citations.
                 """
                 
                 try:
                     research_result = call_llm_api(test_provider, test_model, researcher_full_prompt, resolved_key)
-                    add_s_log("✅ <b>[Agent 1]</b> Selesai! Data riset mentah berhasil dikumpulkan. Mengirimkan berkas ke Agent 2...")
+                    add_s_log("✅ <b>[Agent 1]</b> Analysis completed! Raw research data successfully collected. Passing pipeline payload to Agent 2...")
                     
                     st.markdown("#### 📂 Output Agent 1: The Researcher")
                     st.markdown(research_result)
                     
                     # STEP 2: RUN ANALYST
                     st.markdown("<br>", unsafe_allow_html=True)
-                    add_s_log("🚀 <b>[Agent 2 - The Analyst]</b> Mengaktifkan modul analisis model bisnis...")
-                    add_s_log("💡 Membaca laporan riset dari Agent 1...")
-                    add_s_log("📊 Menganalisis pergeseran model bisnis dari penghematan biaya USD 115M-135M menuju unit otonom...")
-                    add_s_log("📊 Menganalisis tingkat retensi pengguna remaja Gen Z/Alpha dengan fitur Parental Supervision...")
-                    add_s_log("📊 Menganalisis dampak perpanjangan retensi data iklan 730 hari terhadap dominasi Google Ads...")
+                    add_s_log("🚀 <b>[Agent 2 - The Analyst]</b> Initializing B2B business model analysis module...")
+                    add_s_log("💡 Ingesting raw research payload from Agent 1...")
+                    add_s_log("📊 Modeling meta-operational efficiency shifting USD 115M-135M from manual overhead to autonomous units...")
+                    add_s_log("📊 Evaluating Gen Z & Alpha user retention rates under parental supervision guardrails...")
+                    add_s_log("📊 Evaluating Google Ads competitive landscape shift driven by the 730-day Audience Retention Window...")
                     
                     analyst_full_prompt = f"""
-                    Kamu adalah **Agent 2: The Analyst** (Terinspirasi oleh crawl4ai & ScrapeGraphAI).
-                    Tugasmu adalah menganalisis data riset mentah yang dikirimkan oleh Agent 1 berdasarkan teori bisnis, analisis konversi, dan peta persaingan ad-tech.
+                    You are **Agent 2: The Analyst** (Inspired by crawl4ai & ScrapeGraphAI).
+                    Your task is to analyze the raw research payload transmitted by Agent 1, utilizing corporate strategy frameworks, digital conversion models, and the ad-tech competitive landscape.
                     
-                    **Data Riset dari Agent 1**:
+                    **Research Data from Agent 1**:
                     {research_result}
                     
-                    **Instruksi Analisis**:
+                    **Analysis Instructions**:
                     {analyst_prompt}
                     
-                    Tuliskan laporan analisis strategismu dalam markdown yang elegan dan profesional.
+                    Formulate your strategic analysis report in elegant, publication-grade markdown.
                     """
                     
                     analysis_result = call_llm_api(test_provider, test_model, analyst_full_prompt, resolved_key)
-                    add_s_log("✅ <b>[Agent 2]</b> Selesai! Analisis pergeseran bisnis & dampak teknologi berhasil dirumuskan. Mengirimkan berkas ke Agent 3...")
+                    add_s_log("✅ <b>[Agent 2]</b> Analysis formulated! Business restructuring & technology impact maps finalized. Forwarding to Agent 3...")
                     
                     st.markdown("#### 📊 Output Agent 2: The Analyst")
                     st.markdown(analysis_result)
                     
                     # STEP 3: RUN COPYWRITER
                     st.markdown("<br>", unsafe_allow_html=True)
-                    add_s_log("🚀 <b>[Agent 3 - The Copywriter]</b> Mengaktifkan modul penulisan persuasif & kreatif...")
-                    add_s_log("✍️ Merancang Press Release Internal penyejuk restrukturisasi Mei 2026...")
-                    add_s_log("✍️ Merancang Iklan B2B LinkedIn (retensi 730 hari & Meta AI Asisten)...")
-                    add_s_log("✍️ Merancang Utas X/Twitter ramah keluarga untuk Parental Controls...")
+                    add_s_log("🚀 <b>[Agent 3 - The Copywriter]</b> Activating high-conversion copywriting and messaging module...")
+                    add_s_log("✍️ Drafting internal transition communications to align engineering teams post-restructuring...")
+                    add_s_log("✍️ Drafting B2B LinkedIn Ad Campaign highlighting the 730-day retention advantage...")
+                    add_s_log("✍️ Drafting an engaging X/Twitter thread focusing on the brand safety of Parental Guardrails...")
                     
                     copywriter_full_prompt = f"""
-                    Kamu adalah **Agent 3: The Copywriter** (Terinspirasi oleh sales-outreach-automation).
-                    Tugasmu adalah menyusun 3 variasi konten copywriting berkualitas tinggi berdasarkan laporan analisis strategis dari Agent 2 dan data riset dari Agent 1.
+                    You are **Agent 3: The Copywriter** (Inspired by sales-outreach-automation).
+                    Your task is to construct three high-converting messaging concepts based on Agent 2's strategic analysis and Agent 1's research payload.
                     
-                    **Laporan Analisis dari Agent 2**:
+                    **Strategic Business Report from Agent 2**:
                     {analysis_result}
                     
-                    **Data Riset dari Agent 1**:
+                    **Raw Research Data from Agent 1**:
                     {research_result}
                     
-                    **Instruksi Penulisan**:
+                    **Copywriting Directives**:
                     {copywriter_prompt}
                     
-                    Sajikan ketiga variasi konten tersebut dalam format markdown yang indah, lengkap dengan pemisah yang jelas.
+                    Present the three copywriting variants in clean, highly readable markdown format with structured headings.
                     """
                     
                     copywriting_result = call_llm_api(test_provider, test_model, copywriter_full_prompt, resolved_key)
-                    add_s_log("✅ <b>[Agent 3]</b> Selesai! Seluruh variasi materi copywriting berhasil diproduksi!")
+                    add_s_log("✅ <b>[Agent 3]</b> Production finalized! Multi-channel copy variations ready for B2B distribution.")
                     
                     st.markdown("#### ✍️ Output Agent 3: The Copywriter")
                     st.markdown("<div class='ad-container'>" + copywriting_result + "</div>", unsafe_allow_html=True)
                     
                     # Success download block
-                    st.success("🎉 Pengujian Sandbox Live Berhasil! Seluruh Agen AI Bekerja dengan Sempurna secara Otonom.")
+                    st.success("🎉 Live Sandbox Test Successful! The 3-agent autonomous system completed all instructions perfectly.")
                     st.download_button(
-                        label="📥 DOWNLOAD HASIL UJI COBA LIVE (.MD)",
-                        data=f"# Laporan Pengujian Live Agen Otonom (Mei 2026)\n\n## 1. RESEARCHER OUTPUT\n{research_result}\n\n## 2. ANALYST OUTPUT\n{analysis_result}\n\n## 3. COPYWRITER OUTPUT\n{copywriting_result}",
-                        file_name="hasil_uji_coba_sandbox_meta.md",
+                        label="📥 DOWNLOAD LIVE SANDBOX RESULTS (.MD)",
+                        data=f"# Autonomous Multi-Agent Live Sandbox Report (May 2026)\n\n## 1. RESEARCHER OUTPUT\n{research_result}\n\n## 2. ANALYST OUTPUT\n{analysis_result}\n\n## 3. COPYWRITER OUTPUT\n{copywriting_result}",
+                        file_name="meta_autonomous_sandbox_report.md",
                         mime="text/markdown"
                     )
                 except Exception as e:
-                    add_s_log(f"❌ <b>[System Error]</b> Pengujian gagal: {str(e)}")
-                    st.error(f"Gagal menjalankan pengujian sandbox: {str(e)}")
+                    add_s_log(f"❌ <b>[System Error]</b> Sandbox execution failed: {str(e)}")
+                    st.error(f"Failed to execute sandbox test: {str(e)}")
 
 # --- FOOTER ---
 st.markdown("<br><hr style='border-color: #334155;'><br>", unsafe_allow_html=True)

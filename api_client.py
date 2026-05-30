@@ -225,11 +225,16 @@ class GeminiClient:
                     logging.warning("Respons kosong dari API.")
                     return None
 
+                elif response.status_code in (400, 401, 403):
+                    logging.warning(f"Auth/Access Error {response.status_code}: {response.text[:150]}. Rotating key and retrying...")
+                    self._rotate_key()
+                    continue
+
                 elif response.status_code == 429:
                     delay = min(self.model_config["rate_limit_delay"] * (2 ** attempt), 300)
                     logging.warning(f"Rate limit. Menunggu {delay}s lalu rotasi key...")
-                    time.sleep(delay)
                     self._rotate_key()
+                    time.sleep(delay)
 
                 elif response.status_code in (500, 502, 503, 504):
                     delay = min(5 * (2 ** attempt), 120)
@@ -247,24 +252,21 @@ class GeminiClient:
                         continue
                     time.sleep(delay)
 
-                elif response.status_code == 400:
-                    logging.error(f"Bad Request 400: {response.text[:300]}")
-                    return None
-
                 else:
-                    logging.error(f"API Error {response.status_code}: {response.text[:200]}")
-                    return None
+                    logging.error(f"API Error {response.status_code}: {response.text[:200]}. Rotating key...")
+                    self._rotate_key()
 
             except requests.exceptions.Timeout:
                 delay = min(10 * (2 ** attempt), 120)
                 logging.warning(f"Timeout pada attempt {attempt+1}. Retry dalam {delay}s...")
+                self._rotate_key()
                 time.sleep(delay)
 
             except requests.exceptions.RequestException as e:
                 delay = min(5 * (2 ** attempt), 60)
                 logging.error(f"Request gagal: {e}. Retry dalam {delay}s...")
-                time.sleep(delay)
                 self._rotate_key()
+                time.sleep(delay)
 
         logging.error("Semua percobaan API gagal.")
         return None

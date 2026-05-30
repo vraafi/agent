@@ -105,6 +105,51 @@ def request_hermes_to_test_code(code_path: str) -> str:
     except Exception as e:
         return f"[SYSTEM ERROR]\nGagal menjalankan terminal test: {e}"
 
+@mcp.tool()
+def check_roblox_status() -> str:
+    """Mengecek status server Rojo (port 34872) dan Telemetry (port 5000) untuk mengetahui koneksi dengan Roblox Studio."""
+    import socket
+    status = {}
+    
+    # Check Rojo
+    s_rojo = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s_rojo.settimeout(1.0)
+    try:
+        s_rojo.connect(("127.0.0.1", 34872))
+        status["rojo"] = "RUNNING"
+        s_rojo.close()
+    except Exception:
+        status["rojo"] = "STOPPED (Tidak aktif di port 34872)"
+        
+    # Check Telemetry
+    s_tel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s_tel.settimeout(1.0)
+    try:
+        s_tel.connect(("127.0.0.1", 5000))
+        status["telemetry"] = "RUNNING"
+        s_tel.close()
+    except Exception:
+        status["telemetry"] = "STOPPED (Tidak aktif di port 5000)"
+        
+    return json.dumps(status, indent=2)
+
+@mcp.tool()
+def get_roblox_telemetry(limit: int = 15) -> str:
+    """Mendapatkan daftar log/error terbaru dari game Roblox yang sedang berjalan di Roblox Studio."""
+    telemetry_path = os.path.join(OUTPUT_DIR, "roblox_telemetry.json")
+    if not os.path.exists(telemetry_path):
+        return json.dumps({"status": "empty", "message": "Belum ada data telemetry dari Roblox Studio."})
+        
+    try:
+        with open(telemetry_path, "r", encoding="utf-8") as f:
+            logs = json.load(f)
+            # Ambil log terbaru (di akhir list)
+            latest_logs = logs[-limit:]
+            return json.dumps(latest_logs, indent=2)
+    except Exception as e:
+        return f"Error membaca telemetry: {e}"
+
 if __name__ == "__main__":
     # Menjalankan server MCP melalui standard input/output (stdio)
     mcp.run()
+

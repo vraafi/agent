@@ -10,38 +10,33 @@ Hierarki Model (urutan prioritas):
 """
 
 LLM_MODELS = {
-    # Primary: Dense 31B — default untuk semua task (1500 RPD)
+    # Primary: mapped to gemma-4-31b-it
     "gemma-4-31b-it": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent",
-        "max_retries": 5,
-        "timeout": 180,
-        "rate_limit_delay": 30,
+        "max_retries": 3,
+        "timeout": 45,
+        "rate_limit_delay": 10,
         "supports_thinking": False,
-        # PENTING: Gemma tidak support google_search tool — menyebabkan 500 Internal Server Error
-        # Gunakan DuckDuckGo sebagai gantinya (lihat api_client.py _search_web)
-        "supports_google_search": False,
+        "supports_google_search": True,
     },
 
-    # Secondary: MoE 26B — fallback pertama jika 31b habis/gagal
+    # Secondary: mapped to gemma-4-26b-a4b-it
     "gemma-4-26b-a4b-it": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/models/gemma-4-26b-a4b-it:generateContent",
-        "max_retries": 5,
-        "timeout": 120,
-        "rate_limit_delay": 30,
+        "max_retries": 3,
+        "timeout": 45,
+        "rate_limit_delay": 10,
         "supports_thinking": False,
-        # PENTING: Gemma tidak support google_search tool — menyebabkan 500 Internal Server Error
-        "supports_google_search": False,
+        "supports_google_search": True,
     },
 
-    # Last Resort: Flash-Lite — hanya dipakai jika 31b DAN 26b sama-sama gagal
-    # PERINGATAN: hanya 20 RPD! Jangan jadikan default.
+    # Last Resort: mapped to gemini-3.1-flash-lite-preview
     "gemini-3.1-flash-lite-preview": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent",
-        "max_retries": 2,
+        "max_retries": 3,
         "timeout": 45,
-        "rate_limit_delay": 60,
+        "rate_limit_delay": 10,
         "supports_thinking": False,
-        # Flash model mendukung google_search tool (tapi lebih baik tetap pakai DDG untuk hemat quota)
         "supports_google_search": True,
     },
 }

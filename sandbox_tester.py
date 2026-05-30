@@ -178,7 +178,8 @@ class SandboxTester:
             err_str = str(e)
             # Jika Docker tidak berjalan atau tidak tersedia, langsung fallback
             if any(kw in err_str.lower() for kw in [
-                "docker", "connection", "daemon", "socket", "unsupported backend"
+                "docker", "connection", "daemon", "socket", "unsupported backend",
+                "server api version", "createfile", "pipe"
             ]):
                 logging.warning(
                     "llm-sandbox/Docker tidak tersedia (%s). Fallback ke subprocess.", err_str[:120]

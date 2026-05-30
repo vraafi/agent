@@ -363,6 +363,20 @@ class XAgent:
 
         if "FAILED" not in result:
             self.logger.info("Tech news berhasil diposting: %s…", news_tweet[:50])
+            
+            # [MULTI-AGENT] Broadcast the trend to FiverrAgent to create a related gig
+            if hasattr(self, 'comm_hub'):
+                # Extract a short trend keyword from the tweet
+                trend_keyword = self.llm.generate_content(
+                    f"Extract a 1-3 word trending tech topic from this text: {news_tweet}. Just the words, no quotes."
+                ) or "Python Automation"
+                self.comm_hub.send_message(
+                    sender=getattr(self, 'agent_name', 'x_agent'),
+                    receiver='fiverr_agent',
+                    task_type='create_gig_from_trend',
+                    data={'trend': trend_keyword.strip()}
+                )
+
             return True
         else:
             self.logger.warning("Gagal posting tech news.")
