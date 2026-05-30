@@ -106,7 +106,7 @@ def _resolve_brave_path() -> Optional[str]:
     return None
 
 
-def _auto_launch_brave(brave_path: str, port: int = 9222) -> bool:
+def _auto_launch_brave(brave_path: str, port: int = 9223) -> bool:
     """Jalankan Brave dengan remote debugging port."""
     import subprocess
     flags = [
@@ -134,7 +134,7 @@ def _auto_launch_brave(brave_path: str, port: int = 9222) -> bool:
         return False
 
 
-def _find_active_cdp_url(port: int = 9222) -> Optional[str]:
+def _find_active_cdp_url(port: int = 9223) -> Optional[str]:
     candidates = []
     env_url = os.environ.get("BRAVE_CDP_URL", "").strip()
     if env_url:
@@ -389,7 +389,7 @@ class GemmaDirectAgent:
                 browser = await pw.chromium.launch(
                     executable_path=brave_path,
                     headless=False,
-                    args=["--remote-debugging-port=9222"]
+                    args=["--remote-debugging-port=9223"]
                 )
                 page = await browser.new_page()
 
@@ -757,7 +757,7 @@ class BrowserAgent:
     """
 
     def __init__(self, headless=False, use_camoufox=None, proxy=None,
-                 endpoint_url="http://localhost:9222", llm_client=None):
+                 endpoint_url="http://localhost:9223", llm_client=None):
         self.proxy = proxy
         self._base_url = endpoint_url
         self.llm = llm_client
