@@ -237,7 +237,7 @@ class GemmaDirectCaller:
             "contents": [{"role": "user", "parts": parts}],
             "generationConfig": {
                 "temperature": 0.1,
-                "maxOutputTokens": 1024
+                "maxOutputTokens": 4096
             }
         }
 
@@ -258,10 +258,7 @@ class GemmaDirectCaller:
                         if candidates:
                             parts_resp = candidates[0].get("content", {}).get("parts", [])
                             if parts_resp:
-                                text = parts_resp[0].get("text", "")
-                                if text and not text.strip().endswith("}"):
-                                    text = text.strip() + "}"
-                                return text
+                                return "".join(p.get("text", "") for p in parts_resp)
                         return None
                         
                     elif resp.status_code in (403, 429, 500, 503):
@@ -296,7 +293,7 @@ _GEMMA_STEP_SYSTEM = """You are an ELITE browser automation agent.
 Your mission: Complete the task as fast and accurately as possible.
 
 STRICT OPERATING PROCEDURES:
-1. TARGET FIRST: If you are not on the website related to the task (e.g., Upwork, Fiverr), your FIRST action MUST be 'navigate' to that site.
+1. TARGET FIRST: If you are not on the website related to the task, your FIRST action MUST be 'navigate' to that site. However, if the current URL matches the target website, NEVER 'navigate' to the same URL. Proceed immediately with UI actions.
 2. NO GOOGLE: Do not use Google unless the task specifically asks you to search for something unknown.
 3. JSON ONLY: Reply ONLY with a valid JSON object. No pre-text, no post-text.
 4. BE AWARE: If the URL changes (e.g., after login), observe the new elements and continue the task.
@@ -309,12 +306,14 @@ AVAILABLE ACTIONS:
 - wait: {"seconds": <int>}
 - done: {"result": "..."}
 
-JSON FORMAT:
+JSON FORMAT (MUST BE IN A MARKDOWN BLOCK):
+```json
 {
   "action": "action_name",
   "params": {},
   "reasoning": "Why this action is the correct next step"
 }
+```
 """
 
 _GEMMA_STEP_USER = """### GOAL: {task}
@@ -332,9 +331,9 @@ _GEMMA_STEP_USER = """### GOAL: {task}
 
 ### INSTRUCTION:
 Decide the next action. 
-- If you are NOT on the target website, your ONLY action is 'navigate' to it.
-- If you are on the target website, proceed with the task.
-REPLY IN JSON ONLY:"""
+- If you are already on the target URL or a relevant page, DO NOT use 'navigate' to the same URL. Proceed immediately with interactions like 'click' or 'type'.
+- Only use 'navigate' if you are on a completely wrong or blank website (e.g. google.com).
+REPLY IN JSON ONLY (enclosed in ```json ... ```):"""
 
 
 class GemmaDirectAgent:
@@ -455,7 +454,7 @@ class GemmaDirectAgent:
                     
                     if target_hint:
                         logger.info("[GemmaDirect] Auto-redirecting to target: %s", target_hint)
-                        await page.goto(target_hint, wait_until="networkidle", timeout=30000)
+                        await page.goto(target_hint, wait_until="domcontentloaded", timeout=30000)
                         url = page.url
 
                 # Tunggu loading
@@ -468,9 +467,16 @@ class GemmaDirectAgent:
                 page_summary = (await page.inner_text("body"))[:2000] if await page.query_selector("body") else ""
                 elements = await self._get_interactive_elements(page)
 
-                # Format prompt sangat sederhana
-                user_prompt = f"TASK: {self.task}\nURL: {url}\nELEMENTS:\n{elements}\n\nREPLY ONLY WITH JSON ACTION."
-                
+                # Gunakan template lengkap agar history dan instruksi terbaca
+                user_prompt = _GEMMA_STEP_USER.format(
+                    task=self.task,
+                    url=url,
+                    step=step,
+                    max_steps=self.max_steps,
+                    history="\n".join(self._history[-3:]) if self._history else "None",
+                    page_summary=page_summary,
+                    elements=elements
+                )
                 logger.info("[GemmaDirect] Sending prompt to Gemma...")
 
                 # Panggil Gemma
@@ -479,7 +485,7 @@ class GemmaDirectAgent:
                     logger.warning("[GemmaDirect] No response from Gemma.")
                     continue
 
-                logger.info("[GemmaDirect] Raw Response: %s", raw_response[:200].replace("\n", " "))
+                logger.info("[GemmaDirect] Raw Response:\n%s", raw_response)
 
                 # Parse JSON dari respons Gemma
                 action_data = self._parse_gemma_response(raw_response)
@@ -509,12 +515,18 @@ class GemmaDirectAgent:
                             logger.warning("[GemmaDirect] Skip navigasi ke URL yang sama: %s", clean_target)
                             await asyncio.sleep(1)
                         else:
-                            await page.goto(target_url, wait_until="networkidle", timeout=30000)
+                            await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
                 
                 elif action == "click":
                     idx = params.get("index")
                     if idx is not None:
+                        old_pages_len = len(context.pages)
                         await self._click_element_by_index(page, int(idx))
+                        await asyncio.sleep(2)  # Tunggu tab baru
+                        if len(context.pages) > old_pages_len:
+                            page = context.pages[-1]
+                            await page.bring_to_front()
+                            logger.info("[GemmaDirect] Tab baru terbuka, beralih ke: %s", page.url)
                 
                 elif action == "type":
                     idx = params.get("index")
@@ -561,19 +573,22 @@ class GemmaDirectAgent:
         """Ambil daftar elemen interaktif dari halaman."""
         try:
             elements = await page.query_selector_all(
-                "a, button, input, textarea, select, [role='button'], [role='link']"
+                "a, button, input, textarea, select, [role='button'], [role='link'], [role='textbox'], [contenteditable='true'], [onclick], [tabindex], div[class*='job'], div[class*='card'], div[class*='project']"
             )
             lines = []
-            for i, el in enumerate(elements[:30]):  # max 30 elemen
+            for i, el in enumerate(elements[:120]):
                 try:
                     tag = await el.evaluate("el => el.tagName.toLowerCase()")
-                    text = (await el.inner_text())[:50] if await el.is_visible() else ""
+                    text = (await el.inner_text()).strip()
+                    # Bersihkan newlines dari text agar tidak merusak format log
+                    text = " ".join(text.split())[:60]
                     placeholder = await el.get_attribute("placeholder") or ""
                     el_type = await el.get_attribute("type") or ""
                     href = await el.get_attribute("href") or ""
-                    label = text or placeholder or href[:40] or el_type or tag
-                    if label.strip():
-                        lines.append(f"[{i}] <{tag}> {label.strip()[:60]}")
+                    
+                    label = text or placeholder or href[:40] or el_type
+                    if label:
+                        lines.append(f"[{i}] <{tag}> {label}")
                 except Exception:
                     pass
             return "\n".join(lines) if lines else "(tidak ada elemen interaktif)"
@@ -584,18 +599,42 @@ class GemmaDirectAgent:
         """Klik elemen berdasarkan nomor urut."""
         try:
             elements = await page.query_selector_all(
-                "a, button, input, textarea, select, [role='button'], [role='link']"
+                "a, button, input, textarea, select, [role='button'], [role='link'], [role='textbox'], [contenteditable='true'], [onclick], [tabindex], div[class*='job'], div[class*='card'], div[class*='project']"
             )
             if 0 <= index < len(elements):
                 el = elements[index]
-                await el.scroll_into_view_if_needed()
+                
+                # Auto-find clickable child if a container is selected (solves Fastwork bubbling issue)
                 try:
-                    # Coba klik standar Playwright dengan force=True agar bypass actionability checks
+                    tag_name = await el.evaluate("el => el.tagName.toLowerCase()")
+                    if tag_name == "div":
+                        inner_a = await el.query_selector("a, button")
+                        if inner_a:
+                            logger.info("[GemmaDirectAgent] Mengalihkan klik ke inner element (a/button) dari div container.")
+                            el = inner_a
+                except Exception:
+                    pass
+                
+                try:
+                    await el.evaluate("el => el.scrollIntoView({block: 'center', inline: 'center'})")
+                    await asyncio.sleep(0.5)
+                except Exception:
+                    await el.scroll_into_view_if_needed()
+
+                try:
+                    # Coba klik standar Playwright dengan force=True
                     await el.click(force=True, timeout=3000)
                 except Exception as click_exc:
-                    logger.warning("[GemmaDirectAgent] Standard click failed, retrying via DOM JS evaluation: %s", click_exc)
-                    # Fallback ke JS-based click jika standar gagal (anti-bot/CDP coordinate mismatch)
-                    await el.evaluate("el => el.click()")
+                    logger.warning("[GemmaDirectAgent] Standard click failed, retrying via DOM MouseEvent dispatch: %s", click_exc)
+                    # Fallback ke MouseEvent (sangat ampuh untuk React/Next.js)
+                    await el.evaluate("""el => {
+                        el.dispatchEvent(new MouseEvent('click', {
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            buttons: 1
+                        }));
+                    }""")
                 return True
         except Exception as e:
             logger.debug("[GemmaDirectAgent] Click error: %s", e)
@@ -605,7 +644,7 @@ class GemmaDirectAgent:
         """Ketik teks ke dalam elemen berdasarkan nomor urut."""
         try:
             elements = await page.query_selector_all(
-                "a, button, input, textarea, select, [role='button'], [role='link']"
+                "a, button, input, textarea, select, [role='button'], [role='link'], [role='textbox'], [contenteditable='true'], [onclick], [tabindex], div[class*='job'], div[class*='card'], div[class*='project']"
             )
             if 0 <= index < len(elements):
                 el = elements[index]
@@ -613,11 +652,15 @@ class GemmaDirectAgent:
                     # Coba input standar Playwright
                     await el.click(force=True, timeout=3000)
                     await el.fill(text, force=True)
+                    await el.press("Enter")
+                    await page.wait_for_timeout(2000)
                 except Exception as type_exc:
                     logger.warning("[GemmaDirectAgent] Standard fill failed, retrying via DOM JS value injection: %s", type_exc)
                     # Fallback ke direct DOM value injection + dispatch events
                     safe_text = text.replace("'", "\\'")
                     await el.evaluate(f"el => {{ el.value = '{safe_text}'; el.dispatchEvent(new Event('input', {{ bubbles: true }})); el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}")
+                    await el.press("Enter")
+                    await page.wait_for_timeout(2000)
         except Exception as e:
             logger.debug("[GemmaDirectAgent] Type error: %s", e)
 
@@ -647,43 +690,9 @@ class GemmaDirectAgent:
         except:
             pass
 
-        # 2. FALLBACK: Ekstraksi kata kunci jika Gemma "bercerita"
-        logger.info("[GemmaDirect] JSON failed. Attempting keyword extraction...")
-        raw_l = raw.lower()
-        
-        # Cari Index (elemen) - PRIORITAS TINGGI
-        idx_match = re.search(r"index[:\s]+(\d+)", raw_l)
-        if not idx_match: idx_match = re.search(r"(\d+)", raw_l) 
-        
-        if idx_match:
-            idx = int(idx_match.group(1))
-            if "type" in raw_l or "enter" in raw_l or "fill" in raw_l:
-                txt_match = re.search(r"['\"](.*?)['\"]", raw)
-                return {"action": "type", "params": {"index": idx, "text": txt_match.group(1) if txt_match else "input"}, "reasoning": "Text extraction"}
-            if "click" in raw_l or "press" in raw_l:
-                return {"action": "click", "params": {"index": idx}, "reasoning": "Text extraction"}
-
-        # Deteksi navigasi (mencari URL)
-        all_urls = re.findall(r"https?://[^\s`'\"<>]+", raw)
-        target_url = None
-        if all_urls:
-            current_url = getattr(self, "_last_url", "")
-            for u in all_urls:
-                if u.rstrip("/") != current_url.rstrip("/"):
-                    target_url = u
-                    break
-        
-        if ("navigate" in raw_l or "visit" in raw_l or "go to" in raw_l) and target_url:
-            return {"action": "navigate", "params": {"url": target_url}, "reasoning": "Text extraction"}
-
-        if "done" in raw_l or "success" in raw_l:
-            res_match = re.search(r'["\']result["\']\s*:\s*["\'](.*?)["\']', raw)
-            res_val = res_match.group(1) if res_match else "Finished"
-            return {"action": "done", "params": {"result": res_val}, "reasoning": "Text extraction"}
-
-        return None
-
-        logger.debug("[GemmaDirectAgent] Tidak bisa parse JSON: %s", raw[:200])
+        # 3. FALLBACK STRICT: Jika regex tidak menemukan JSON yang valid, tolak aksi.
+        # Fallback kata kunci sangat berbahaya karena mengekstrak URL/angka dari narasi yang menyebabkan infinite loop klik.
+        logger.error("[GemmaDirect] Strict JSON extraction failed. Response missing valid JSON block.")
         return None
 
 

@@ -78,3 +78,31 @@ class LinkedinAgent:
         self.logger.info("Tidak ada proyek langsung ditemukan di LinkedIn saat ini. Melakukan cooldown sebelum pencarian berkala berikutnya...")
         time.sleep(60)
         return applied_or_completed
+
+    def check_notifications(self) -> None:
+        self.logger.info("Memeriksa notifikasi LinkedIn...")
+        self.browser.execute_task(
+            "Buka https://www.linkedin.com/notifications/ secara langsung. "
+            "Baca sekilas daftar notifikasi yang ada di halaman. "
+            "PENTING: Jangan mengeklik notifikasi apapun secara individual karena akan menyebabkan looping! Cukup kunjungi halamannya agar sistem LinkedIn menandainya sebagai telah dibaca. "
+            "Langsung gunakan aksi 'done' dengan result 'NOTIFICATIONS_CHECKED' setelah halaman terbuka dan berhasil dimuat.",
+            max_steps=3
+        )
+
+    def post_content(self) -> None:
+        self.logger.info("Memposting pitch deck B2B Evan Fisher style ke LinkedIn...")
+        pitch = (
+            "$5B+ raised Series A to IPO | I help tech founders raise their next big round. \\n\\n"
+            "If your AI/SaaS startup is struggling to close funding, your pitch is likely too generic.\\n"
+            "We build data pipelines and AI systems that directly accelerate business growth and cut operational costs.\\n"
+            "Stop the 'Investment Banker Special' dry pitches. Let's make your VC narrative undeniably precise.\\n\\n"
+            "#TechFounders #VCFunding #AI #DataPipelines #Startups"
+        )
+        self.browser.execute_task(
+            f"Buka https://www.linkedin.com/feed/?shareActive=true secara langsung untuk membuka modal posting secara otomatis. "
+            f"Jangan mencari tombol 'Start a post' karena modal seharusnya sudah terbuka. Langsung cari elemen input (textbox) untuk mengetik. "
+            f"Ketik teks berikut ini persis ke dalam text area yang muncul:\\n\\n{pitch}\\n\\n"
+            f"Setelah mengetik, klik tombol 'Post' atau 'Posting'. "
+            f"Jika sudah selesai memposting, gunakan aksi 'done' dengan result 'POST_SUCCESS'.",
+            max_steps=8
+        )

@@ -57,8 +57,9 @@ class FreelanceOrchestrator:
 
         try:
             while True:
-                # Terus-menerus menjalankan slot Fastwork dan LinkedIn
-                for platform in ["fastwork", "linkedin"]:
+                # Fastwork dinonaktifkan sementara karena limit 10 penawaran tercapai.
+                # Fokus 100% ke LinkedIn untuk memburu $1.
+                for platform in ["linkedin"]:
                     job_data = self._run_platform_slot(platform)
                     if job_data:
                         return job_data
@@ -144,6 +145,9 @@ class FreelanceOrchestrator:
                     cb = self.circuit_breakers.get(platform)
 
                     def run_platform_logic():
+                        if platform == "linkedin":
+                            agent.check_notifications()
+                            agent.post_content()
                         # Laksanakan misi
                         agent.search_and_execute_missions()
 

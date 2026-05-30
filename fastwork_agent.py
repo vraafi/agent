@@ -66,11 +66,13 @@ class FastworkAgent:
         # Langkah 1: Coba cari job di Fastwork
         self.logger.info("Mencari job di Fastwork...")
         result = self.browser.execute_task(
-            "Buka https://jobboard.fastwork.id/jobs?order_by[]=inserted_at&order_directions[]=desc&page=1&page_size=20 (Jobboard Fastwork) secara langsung. "
-            "Lakukan pencarian atau filter proyek dengan kata kunci 'python' atau 'scraping'. "
-            "Jika kamu menemukan lowongan proyek coding/automation/scraping yang aktif dan bisa dilamar, masuk ke halamannya dan klik tombol lamar/apply. "
-            "Jika tidak ada lowongan proyek yang cocok atau tidak bisa melamar, gunakan aksi 'done' dengan result 'NO_DIRECT_JOBS_FOUND'. "
-            "Jika berhasil melamar, gunakan aksi 'done' dengan result 'JOB_APPLIED'.",
+            "Buka halaman utama pencarian pekerjaan Fastwork. "
+            "JANGAN membatasi diri dengan kata kunci 'python' atau 'scraping'. Telusuri SEMUA pekerjaan terbaru di kategori IT/Pemrograman (seperti web, bot, data, script, bug fix). "
+            "PENTING: Jika tidak ada tombol yang valid di daftar elemen (Interactive Elements), cobalah mengeklik link/judul pekerjaan apa saja yang berhubungan dengan IT yang terdeteksi di ringkasan halaman. "
+            "Jika ada proyek yang menarik dan bisa diklik, klik proyek tersebut. "
+            "PENTING: JANGAN mengeklik pekerjaan yang sama lebih dari 2 kali berturut-turut. Jika kamu sudah mengeklik namun halaman tidak berpindah, segera hentikan klik dan gunakan aksi 'done' dengan result 'JOB_CLICKED'. "
+            "PENTING: Jangan melakukan aksi scroll berulang-ulang lebih dari 2 kali. Jika pekerjaan tidak bisa diklik atau tidak ada di elemen interaktif, langsung gunakan aksi 'done' dengan result 'NO_DIRECT_JOBS_FOUND'. "
+            "Jika berhasil masuk ke halaman pekerjaan dan melamar, gunakan aksi 'done' dengan result 'JOB_APPLIED'.",
             max_steps=15
         )
         
