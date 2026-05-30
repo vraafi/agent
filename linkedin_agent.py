@@ -100,9 +100,10 @@ class LinkedinAgent:
         )
         self.browser.execute_task(
             f"Buka https://www.linkedin.com/feed/ secara langsung. "
-            f"Jika modal posting belum terbuka, cari dan klik tombol 'Mulai buat posting' atau 'Start a post' (misalnya div/button dengan teks tersebut). "
-            f"Setelah modal terbuka, cari elemen input atau textbox (biasanya div contenteditable atau textarea dengan placeholder 'Apa yang ingin Anda bicarakan?'). "
-            f"Langsung gunakan aksi 'type' ke elemen tersebut dengan teks berikut ini:\\n\\n{pitch}\\n\\n"
+            f"Jika modal posting belum terbuka, cari dan klik tombol 'Mulai buat posting' atau 'Start a post'. "
+            f"Setelah modal terbuka (atau jika sudah terbuka), KAMU TIDAK PERLU MENCARI KOTAK TEKS! Kursor sudah otomatis aktif di sana. "
+            f"Langsung gunakan aksi 'type' dengan parameter `index: -1` (minus satu) untuk menulis tanpa mencari tombol! "
+            f"Ketik teks berikut ini:\\n\\n{pitch}\\n\\n"
             f"Setelah teks terisi, klik tombol 'Post' atau 'Posting'. "
             f"Jika sudah selesai memposting, gunakan aksi 'done' dengan result 'POST_SUCCESS'.",
             max_steps=8

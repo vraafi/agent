@@ -531,8 +531,12 @@ class GemmaDirectAgent:
                 elif action == "type":
                     idx = params.get("index")
                     text = params.get("text", "")
-                    if idx is not None:
+                    if idx is not None and str(idx) != "-1":
                         await self._type_in_element(page, int(idx), text)
+                    else:
+                        logger.info("[GemmaDirectAgent] Typing directly into active element (index not provided or -1).")
+                        await page.keyboard.insert_text(text)
+                        await page.wait_for_timeout(2000)
                 
                 elif action == "scroll":
                     direction = params.get("direction", "down")
