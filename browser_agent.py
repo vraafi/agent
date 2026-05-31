@@ -302,6 +302,7 @@ AVAILABLE ACTIONS:
 - navigate: {"url": "https://..."}
 - click: {"index": <int>}
 - type: {"index": <int>, "text": "..."}
+- upload: {"index": <int>, "path": "C:\\path\\to\\file.png"}
 - scroll: {"direction": "down"|"up", "amount": <int>}
 - wait: {"seconds": <int>}
 - done: {"result": "..."}
@@ -544,6 +545,14 @@ class GemmaDirectAgent:
                     if direction == "up": amount = -amount
                     await page.mouse.wheel(0, amount)
                 
+                elif action == "upload":
+                    idx = params.get("index")
+                    path = params.get("path", "")
+                    if idx is not None and str(idx) != "-1" and path:
+                        await self._upload_in_element(page, int(idx), path)
+                    else:
+                        logger.warning("[GemmaDirectAgent] Upload failed: Invalid index or path not provided.")
+                
                 elif action == "wait":
                     sec = int(params.get("seconds", 2))
                     await asyncio.sleep(sec)
@@ -667,6 +676,28 @@ class GemmaDirectAgent:
                     await page.wait_for_timeout(2000)
         except Exception as e:
             logger.debug("[GemmaDirectAgent] Type error: %s", e)
+
+    async def _upload_in_element(self, page, index: int, path: str):
+        """Mengunggah file ke dalam elemen input file berdasarkan nomor urut."""
+        import os
+        try:
+            elements = await page.query_selector_all(
+                "input[type='file'], a, button, input, textarea, select, [role='button'], [role='link'], [role='textbox'], [contenteditable='true'], [onclick], [tabindex], div[class*='job'], div[class*='card'], div[class*='project']"
+            )
+            if 0 <= index < len(elements):
+                el = elements[index]
+                if not os.path.exists(path):
+                    logger.error("[GemmaDirectAgent] Upload error: File tidak ditemukan di '%s'", path)
+                    return
+                try:
+                    await el.scroll_into_view_if_needed()
+                    logger.info("[GemmaDirectAgent] Mengunggah file '%s' ke elemen index %d", path, index)
+                    await el.set_input_files(path)
+                    await page.wait_for_timeout(2000)
+                except Exception as upload_exc:
+                    logger.warning("[GemmaDirectAgent] Gagal mengunggah via elemen langsung: %s", upload_exc)
+        except Exception as e:
+            logger.error("[GemmaDirectAgent] Upload fatal error: %s", e)
 
     def _parse_gemma_response(self, raw: str) -> Optional[dict]:
         """Parse JSON dari respons Gemma, robust terhadap markdown dan teks ekstra."""

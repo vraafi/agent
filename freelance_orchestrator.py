@@ -19,6 +19,7 @@ from email_monitor import EmailMonitor
 from communication_hub import CommunicationHub
 from fastwork_agent import FastworkAgent
 from linkedin_agent import LinkedinAgent
+from instagram_agent import InstagramAgent
 from x_agent import XAgent
 from financial_tracker import FinancialTracker
 from circuit_breaker import CircuitBreaker
@@ -47,7 +48,8 @@ class FreelanceOrchestrator:
         # Circuit Breaker per platform
         self.circuit_breakers = {
             "fastwork": CircuitBreaker("fastwork"),
-            "linkedin": CircuitBreaker("linkedin")
+            "linkedin": CircuitBreaker("linkedin"),
+            "instagram": CircuitBreaker("instagram")
         }
         self.error_learner = ErrorLearningSystem()
 
@@ -57,9 +59,9 @@ class FreelanceOrchestrator:
 
         try:
             while True:
-                # Fastwork dinonaktifkan sementara karena limit 10 penawaran tercapai.
-                # Fokus 100% ke LinkedIn untuk memburu $1.
-                for platform in ["linkedin"]:
+                # Fastwork dan LinkedIn dinonaktifkan sementara.
+                # Fokus 100% ke Instagram Niche Makanan untuk memburu Rp 1 Juta.
+                for platform in ["instagram"]:
                     job_data = self._run_platform_slot(platform)
                     if job_data:
                         return job_data
@@ -82,6 +84,9 @@ class FreelanceOrchestrator:
                 elif platform == "linkedin":
                     agent = LinkedinAgent(temp_browser, self.llm)
                     success = agent.login_linkedin()
+                elif platform == "instagram":
+                    agent = InstagramAgent(temp_browser, self.llm)
+                    success = agent.login_instagram()
                 else:
                     success = False
                 try:
@@ -134,6 +139,8 @@ class FreelanceOrchestrator:
             agent = FastworkAgent(thread_browser, self.llm)
         elif platform == "linkedin":
             agent = LinkedinAgent(thread_browser, self.llm)
+        elif platform == "instagram":
+            agent = InstagramAgent(thread_browser, self.llm)
         else:
             return
             

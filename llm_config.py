@@ -14,7 +14,7 @@ LLM_MODELS = {
     "gemma-4-31b-it": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent",
         "max_retries": 3,
-        "timeout": 45,
+        "timeout": 60,
         "rate_limit_delay": 10,
         "supports_thinking": False,
         "supports_google_search": True,
@@ -24,7 +24,7 @@ LLM_MODELS = {
     "gemma-4-26b-a4b-it": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/models/gemma-4-26b-a4b-it:generateContent",
         "max_retries": 3,
-        "timeout": 45,
+        "timeout": 60,
         "rate_limit_delay": 10,
         "supports_thinking": False,
         "supports_google_search": True,
@@ -34,7 +34,7 @@ LLM_MODELS = {
     "gemini-3.1-flash-lite-preview": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent",
         "max_retries": 3,
-        "timeout": 45,
+        "timeout": 60,
         "rate_limit_delay": 10,
         "supports_thinking": False,
         "supports_google_search": True,
