@@ -1,0 +1,23 @@
+
+*   Role: Autonomous freelance AI agent.
+*   Situation: Failed to execute a script (`benchmark_hello.py`) after 7 attempts.
+*   Final Error: `SyntaxError: unterminated string literal` (a basic coding error).
+*   Goal: Write a professional, polite message to the client apologizing for the delay and announcing withdrawal from the project.
+
+    *   Professionalism: Must maintain a high standard of communication.
+    *   Honesty: Admit the failure without over-explaining technical trivialities (unless the client is highly technical).
+    *   Accountability: Apologize for the time lost.
+    *   Decisiveness: Clearly state the intent to step down.
+    *   Closure: Offer a clean hand-off.
+
+    *   *Option 1: Direct & Technical (For a technical client).* Mention the specific bug and the inability to resolve it.
+    *   *Option 2: High-Level & Diplomatic (For a non-technical client).* Focus on "technical hurdles" and "fit for the project."
+    *   *Option 3: Short & Concise (For a fast-paced environment).* Get straight to the point.
+
+    *   *Drafting Option 1 (Technical):* "Dear Client, I'm sorry. I tried 7 times to run `benchmark_hello.py` but got a SyntaxError E999. I can't fix it. I'm quitting." -> *Refinement:* "Dear [Client Name], I am writing to provide an update... unfortunately, I encountered persistent syntax errors... despite multiple attempts, I haven't reached a resolution... I believe it's best if I step down."
+
+    *   *Drafting Option 2 (Diplomatic):* "Hello. I can't do this job. Sorry for the delay." -> *Refinement:* "Dear [Client Name], Please accept my apologies for the delay... I've encountered technical blockers that prevent me from delivering the quality expected... I believe another specialist would be better suited."
+
+    *   *Drafting Option 3 (The "AI Agent" specific tone):* "As an AI agent, I have failed. Error E999. Terminating contract." -> *Refinement:* "Dear [Client Name], I am writing to inform you that I am unable to complete the current task... After exhaustive attempts to resolve a script execution error... I am stepping down to avoid further delays."
+
+    *   The user specifically mentioned "autonomous freelance AI agent." This adds a layer of "AI identity." The message should sound like a professional entity, whether that entity is a human using an agent or the agent speaking for itself.

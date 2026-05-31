@@ -201,8 +201,15 @@ class InstagramInboxAgent:
                     await self.page.wait_for_timeout(3000)
                     continue
                 
-                last_message = history[-1]
-                logger.info("[InboxAgent] Pesan terakhir dari klien: %s", last_message[:80])
+                # Cek jika klien baru saja buka chat tapi belum ada pesan (hanya placeholder IG)
+                last_msg = history[-1].strip()
+                if "Send a message to start a chat" in last_msg or "Say hi to" in last_msg:
+                    logger.info("[InboxAgent] Chat %s masih kosong (hanya placeholder IG).", target_name)
+                    await self.page.goto("https://www.instagram.com/direct/inbox/", wait_until="domcontentloaded")
+                    await self.page.wait_for_timeout(3000)
+                    continue
+                
+                logger.info("[InboxAgent] Pesan terakhir dari klien: %s", last_msg[:80])
                 
                 # Gunakan LLM untuk merumuskan balasan
                 reply_text = self._generate_reply(target_name, history)

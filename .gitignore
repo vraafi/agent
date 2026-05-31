@@ -1,8 +1,47 @@
-venv/
-sandbox_env/
-client_sandbox/
+# Environment & secrets
 .env
 *.enc
 *.salt
+
+# Python
+venv/
+venv_win/
 __pycache__/
+*.pyc
+
+# Browser data
+chrome_data/
+bin/
+cloak_profile/
+
+# Sandbox
+sandbox_env/
+client_sandbox/
+
+# Output & logs
 output/
+*.log
+*.db
+
+# Temp simulation dirs
+temp_sim-*/
+
+# IDE
+.vscode/
+
+# Hermes internal
+.hermes/
+
+# Large/binary images
+*.png
+*.jpg
+*.jpeg
+
+# Portfolio submodule
+verdiawan-raafi-portfolio/
+
+# Scratch
+scratch/
+
+# Misc
+cashclaw_integration/
